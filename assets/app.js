@@ -1,7 +1,8 @@
 (function () {
   "use strict";
   const D = FestivalDomain,
-    KEY = "campus-festival-v1";
+    KEY = "campus-festival-v1",
+    COLUMN_PREFERENCES_KEY = "campus-festival-column-preferences-v1";
   const $ = (s) => document.querySelector(s),
     esc = (s) =>
       String(s ?? "").replace(
@@ -22,6 +23,8 @@
     filterEquipment = "",
     filterSupplierCategory = "",
     filterOverdue = false,
+    columnPreferences = {},
+    columnPreferenceWarning = "",
     sortKey = "id",
     editing = null,
     actionInProgress = false,
@@ -198,6 +201,59 @@
     $("#toast").style.display = "block";
     clearTimeout(toastTimer);
     toastTimer = setTimeout(() => ($("#toast").style.display = "none"), 4000);
+  }
+  try {
+    const savedPreferences = localStorage.getItem(COLUMN_PREFERENCES_KEY);
+    if (savedPreferences) {
+      const parsedPreferences = JSON.parse(savedPreferences);
+      if (
+        !parsedPreferences ||
+        typeof parsedPreferences !== "object" ||
+        Array.isArray(parsedPreferences)
+      )
+        throw Error("表示列設定の形式が不正です");
+      columnPreferences = parsedPreferences;
+    }
+  } catch (error) {
+    console.error("表示列設定を読み込めませんでした。", error);
+    columnPreferenceWarning =
+      "表示列設定を読み込めなかったため、すべての列を表示しています。";
+  }
+  function visibleColumns(p, allColumns) {
+    const selected = columnPreferences[state.role]?.[p];
+    if (!Array.isArray(selected)) return allColumns;
+    const selectedKeys = new Set(
+      selected.filter((key) => allColumns.some((col) => col[0] === key)),
+    );
+    return selectedKeys.size
+      ? allColumns.filter((col) => selectedKeys.has(col[0]))
+      : allColumns;
+  }
+  function columnPicker(allColumns, visible) {
+    const selectedKeys = new Set(visible.map((col) => col[0]));
+    return `<details id="column-picker" class="panel column-picker"><summary>表示列を選択</summary><div class="column-options">${allColumns
+      .map(
+        ([key, label]) =>
+          `<label><input type="checkbox" data-column-visibility="${esc(key)}" ${selectedKeys.has(key) ? "checked" : ""}>${esc(label)}</label>`,
+      )
+      .join("")}</div><p class="subtitle">設定は操作する役割ごとに、このブラウザーへ保存されます。</p></details>`;
+  }
+  function setVisibleColumns(p, selectedKeys) {
+    const nextPreferences = structuredClone(columnPreferences);
+    nextPreferences[state.role] ||= {};
+    nextPreferences[state.role][p] = selectedKeys;
+    try {
+      localStorage.setItem(
+        COLUMN_PREFERENCES_KEY,
+        JSON.stringify(nextPreferences),
+      );
+    } catch (error) {
+      console.error("表示列設定を保存できませんでした。", error);
+      toast("表示列設定を保存できませんでした。ブラウザーの保存容量を確認してください。");
+      return false;
+    }
+    columnPreferences = nextPreferences;
+    return true;
   }
   function lockButtons() {
     document.querySelectorAll("button:not(:disabled)").forEach((button) => {
@@ -495,7 +551,8 @@
       p === "tasks" && sortKey === "id"
         ? D.taskOrder(rows)
         : D.sort(rows, sortKey);
-    const cols = columns(p),
+    const allColumns = columns(p),
+      cols = visibleColumns(p, allColumns),
       statuses = [...new Set(state[p].map((r) => r.status).filter(Boolean))];
     let summary = "";
     if (p === "loans")
@@ -551,7 +608,8 @@
       ) +
       summary +
       cleaning +
-      `<div class="toolbar"><div class="filters"><input id="search" type="search" aria-label="一覧を検索" placeholder="キーワードで検索" value="${esc(filterText)}">${p === "loans" ? `<select id="equipment-filter" aria-label="備品で絞り込み"><option value="">すべての備品</option>${state.equipment.map((e) => `<option value="${esc(e.id)}" ${filterEquipment === e.id ? "selected" : ""}>${esc(e.name)}</option>`).join("")}</select>` : ""}${p === "suppliers" ? `<select id="supplier-category-filter" aria-label="業者区分で絞り込み"><option value="">すべての業者区分</option>${options("supplierCategory").map(([v, t]) => `<option value="${esc(v)}" ${filterSupplierCategory === v ? "selected" : ""}>${esc(t)}</option>`).join("")}</select>` : ""}${statuses.length ? `<select id="status-filter" aria-label="状態で絞り込み"><option value="">すべての状態</option>${statuses.map((s) => `<option value="${s}" ${filterStatus === s ? "selected" : ""}>${labels[s] || s}</option>`).join("")}</select>` : ""}<select id="sort" aria-label="並び順">${cols
+      columnPicker(allColumns, cols) +
+      `<div class="toolbar"><div class="filters"><input id="search" type="search" aria-label="一覧を検索" placeholder="キーワードで検索" value="${esc(filterText)}">${p === "loans" ? `<select id="equipment-filter" aria-label="備品で絞り込み"><option value="">すべての備品</option>${state.equipment.map((e) => `<option value="${esc(e.id)}" ${filterEquipment === e.id ? "selected" : ""}>${esc(e.name)}</option>`).join("")}</select>` : ""}${p === "suppliers" ? `<select id="supplier-category-filter" aria-label="業者区分で絞り込み"><option value="">すべての業者区分</option>${options("supplierCategory").map(([v, t]) => `<option value="${esc(v)}" ${filterSupplierCategory === v ? "selected" : ""}>${esc(t)}</option>`).join("")}</select>` : ""}${statuses.length ? `<select id="status-filter" aria-label="状態で絞り込み"><option value="">すべての状態</option>${statuses.map((s) => `<option value="${s}" ${filterStatus === s ? "selected" : ""}>${labels[s] || s}</option>`).join("")}</select>` : ""}<select id="sort" aria-label="並び順">${allColumns
         .filter((c) => !c[0].startsWith("_"))
         .map(
           (c) =>
@@ -585,6 +643,9 @@
     $("#breadcrumb").textContent = "WORKSPACE / " + pages[p][2];
     $("#content").innerHTML =
       (storageWarning ? `<div class="help">${esc(storageWarning)}</div>` : "") +
+      (columnPreferenceWarning
+        ? `<div class="help">${esc(columnPreferenceWarning)}</div>`
+        : "") +
       (p === "dashboard"
         ? renderDashboard()
         : p === "settings"
@@ -754,6 +815,28 @@
           filterSupplierCategory = e.target.value;
           render();
         };
+      document.querySelectorAll("[data-column-visibility]").forEach((input) => {
+        input.onchange = (e) => {
+          const picker = $("#column-picker");
+          const wasOpen = picker.open;
+          const selectedKeys = [
+            ...document.querySelectorAll(
+              "[data-column-visibility]:checked",
+            ),
+          ].map((checkbox) => checkbox.dataset.columnVisibility);
+          if (!selectedKeys.length) {
+            e.currentTarget.checked = true;
+            toast("少なくとも1つの表示列を選択してください");
+            return;
+          }
+          if (!setVisibleColumns(p, selectedKeys)) {
+            e.currentTarget.checked = !e.currentTarget.checked;
+            return;
+          }
+          render();
+          $("#column-picker").open = wasOpen;
+        };
+      });
       if ($("#filter-overdue"))
         $("#filter-overdue").onclick = (e) =>
           runAction(e.currentTarget, () => {
