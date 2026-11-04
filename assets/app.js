@@ -22,6 +22,7 @@
     filterEquipment = "",
     sortKey = "id",
     editing = null,
+    actionInProgress = false,
     toastTimer;
   try {
     const saved = localStorage.getItem(KEY);
@@ -154,6 +155,42 @@
     $("#toast").style.display = "block";
     clearTimeout(toastTimer);
     toastTimer = setTimeout(() => ($("#toast").style.display = "none"), 4000);
+  }
+  function lockButtons() {
+    document.querySelectorAll("button:not(:disabled)").forEach((button) => {
+      button.disabled = true;
+      button.dataset.actionLock = "true";
+    });
+  }
+  function runAction(button, action, guardDuration = 400) {
+    if (actionInProgress || button?.disabled) return;
+    actionInProgress = true;
+    const started = Date.now();
+    let released = false;
+    const release = () => {
+      if (released) return;
+      released = true;
+      setTimeout(() => {
+        document
+          .querySelectorAll('button[data-action-lock="true"]')
+          .forEach((locked) => {
+            locked.disabled = false;
+            delete locked.dataset.actionLock;
+          });
+        actionInProgress = false;
+      }, Math.max(0, guardDuration - (Date.now() - started)));
+    };
+    lockButtons();
+    try {
+      const result = action();
+      if (result && typeof result.then === "function")
+        return result.finally(release);
+      release();
+      return result;
+    } catch (error) {
+      release();
+      throw error;
+    }
   }
   function save(message) {
     state.activity.unshift({ at: new Date().toISOString(), message });
@@ -428,6 +465,7 @@
           ? renderSettings()
           : renderList(p));
     bind(p);
+    if (actionInProgress) lockButtons();
   }
   function options(type) {
     if (type === "group" || type === "audience")
@@ -542,7 +580,8 @@
   }
   function bind(p) {
     if (fields[p]) {
-      $("#add-row").onclick = () => openEditor(p);
+      $("#add-row").onclick = (e) =>
+        runAction(e.currentTarget, () => openEditor(p), 0);
       $("#search").oninput = (e) => {
         const pos = e.target.selectionStart;
         filterText = e.target.value;
@@ -564,122 +603,142 @@
         sortKey = e.target.value;
         render();
       };
-      $("#export-csv").onclick = () =>
-        download(
-          p + ".csv",
-          D.csv(
-            state[p],
-            fields[p].map((f) => f[0]),
+      $("#export-csv").onclick = (e) =>
+        runAction(e.currentTarget, () =>
+          download(
+            p + ".csv",
+            D.csv(
+              state[p],
+              fields[p].map((f) => f[0]),
+            ),
+            "text/csv",
           ),
-          "text/csv",
         );
       document
         .querySelectorAll("[data-edit]")
-        .forEach((b) => (b.onclick = () => openEditor(p, b.dataset.edit)));
+        .forEach(
+          (b) =>
+            (b.onclick = (e) =>
+              runAction(
+                e.currentTarget,
+                () => openEditor(p, b.dataset.edit),
+                0,
+              )),
+        );
       document.querySelectorAll("[data-delete]").forEach(
         (b) =>
-          (b.onclick = () => {
-            if (p === "groups") {
-              const references = D.groupReferences(state, b.dataset.delete);
-              if (references.length) {
-                toast(
-                  `関連記録があるため削除できません（${references.join("、")}）。記録を確認してください。`,
-                );
-                return;
+          (b.onclick = (e) =>
+            runAction(e.currentTarget, () => {
+              if (p === "groups") {
+                const references = D.groupReferences(state, b.dataset.delete);
+                if (references.length) {
+                  toast(
+                    `関連記録があるため削除できません（${references.join("、")}）。記録を確認してください。`,
+                  );
+                  return;
+                }
               }
-            }
-            if (!confirm("このデータを削除しますか？")) return;
-            if (p === "groups") {
-              if (!D.deleteGroup(state, b.dataset.delete)) {
-                toast("関連記録があるため削除できません。");
-                return;
-              }
-            } else state[p] = state[p].filter((r) => r.id !== b.dataset.delete);
-            save(pages[p][1] + "を削除しました");
-            render();
-          }),
+              if (!confirm("このデータを削除しますか？")) return;
+              if (p === "groups") {
+                if (!D.deleteGroup(state, b.dataset.delete)) {
+                  toast("関連記録があるため削除できません。");
+                  return;
+                }
+              } else
+                state[p] = state[p].filter((r) => r.id !== b.dataset.delete);
+              save(pages[p][1] + "を削除しました");
+              render();
+            })),
       );
       document.querySelectorAll("[data-approve]").forEach(
         (b) =>
-          (b.onclick = () => {
-            if (!D.canApprove(state.role)) {
-              toast("実行委員の操作です");
-              return;
-            }
-            const a = state.applications.find(
-              (x) => x.id === b.dataset.approve,
-            );
-            const err = D.validateTime(a);
-            if (err) {
-              toast(err);
-              return;
-            }
-            if (D.venueConflict(state, a)) {
-              toast("会場予約が重複しています");
-              return;
-            }
-            D.approve(state, b.dataset.approve);
-            save("出店を承認し、会場を予約しました");
-            render();
-          }),
+          (b.onclick = (e) =>
+            runAction(e.currentTarget, () => {
+              if (!D.canApprove(state.role)) {
+                toast("実行委員の操作です");
+                return;
+              }
+              const a = state.applications.find(
+                (x) => x.id === b.dataset.approve,
+              );
+              const err = D.validateTime(a);
+              if (err) {
+                toast(err);
+                return;
+              }
+              if (D.venueConflict(state, a)) {
+                toast("会場予約が重複しています");
+                return;
+              }
+              D.approve(state, b.dataset.approve);
+              save("出店を承認し、会場を予約しました");
+              render();
+            })),
       );
       document.querySelectorAll("[data-cancel]").forEach(
         (b) =>
-          (b.onclick = () => {
-            if (!confirm("出店を取り消しますか？")) return;
-            D.cancelApplication(state, b.dataset.cancel);
-            save("出店を取り消しました");
-            render();
-          }),
+          (b.onclick = (e) =>
+            runAction(e.currentTarget, () => {
+              if (!confirm("出店を取り消しますか？")) return;
+              D.cancelApplication(state, b.dataset.cancel);
+              save("出店を取り消しました");
+              render();
+            })),
       );
       document.querySelectorAll("[data-return]").forEach(
         (b) =>
-          (b.onclick = () => {
-            D.returnLoan(state, b.dataset.return);
-            save("返却を記録しました");
-            render();
-          }),
+          (b.onclick = (e) =>
+            runAction(e.currentTarget, () => {
+              D.returnLoan(state, b.dataset.return);
+              save("返却を記録しました");
+              render();
+            })),
       );
       document.querySelectorAll("[data-done]").forEach(
         (b) =>
-          (b.onclick = () => {
-            state.tasks.find((t) => t.id === b.dataset.done).status = "done";
-            save("タスクを完了しました");
-            render();
-          }),
+          (b.onclick = (e) =>
+            runAction(e.currentTarget, () => {
+              state.tasks.find((t) => t.id === b.dataset.done).status = "done";
+              save("タスクを完了しました");
+              render();
+            })),
       );
     }
     if (p === "settings") {
-      $("#backup").onclick = () =>
-        download(
-          "festival-backup-" + today() + ".json",
-          JSON.stringify(state, null, 2),
+      $("#backup").onclick = (e) =>
+        runAction(e.currentTarget, () =>
+          download(
+            "festival-backup-" + today() + ".json",
+            JSON.stringify(state, null, 2),
+          ),
         );
-      $("#restore").onclick = async () => {
-        const file = $("#restore-file").files[0];
-        if (!file) {
-          toast("ファイルを選んでください");
-          return;
-        }
-        try {
-          const data = JSON.parse((await file.text()).replace(/^\uFEFF/, ""));
-          if (!D.validateImport(data) || !D.validateUniqueIds(data))
-            throw Error("形式が不正です");
-          if (!confirm("現在のデータを置き換えますか？")) return;
-          state = data;
-          save("バックアップを復元しました");
+      $("#restore").onclick = (e) =>
+        runAction(e.currentTarget, async () => {
+          const file = $("#restore-file").files[0];
+          if (!file) {
+            toast("ファイルを選んでください");
+            return;
+          }
+          try {
+            const data = JSON.parse((await file.text()).replace(/^\uFEFF/, ""));
+            if (!D.validateImport(data) || !D.validateUniqueIds(data))
+              throw Error("形式が不正です");
+            if (!confirm("現在のデータを置き換えますか？")) return;
+            state = data;
+            save("バックアップを復元しました");
+            render();
+          } catch (e) {
+            toast("読み込めませんでした：" + e.message);
+          }
+        });
+      $("#reset").onclick = (e) =>
+        runAction(e.currentTarget, () => {
+          if (!confirm("編集内容を破棄し、初期データへ戻しますか？")) return;
+          state = structuredClone(FestivalSeed);
+          storageWarning = "";
+          save("初期データへ戻しました");
           render();
-        } catch (e) {
-          toast("読み込めませんでした：" + e.message);
-        }
-      };
-      $("#reset").onclick = () => {
-        if (!confirm("編集内容を破棄し、初期データへ戻しますか？")) return;
-        state = structuredClone(FestivalSeed);
-        storageWarning = "";
-        save("初期データへ戻しました");
-        render();
-      };
+        });
       $("#current-group").onchange = (e) => {
         state.groupId = e.target.value;
         save("操作する団体を変更しました");
@@ -693,34 +752,41 @@
   });
   $("#edit-form").onsubmit = (e) => {
     e.preventDefault();
-    const { p, id } = editing;
-    const r = {
-      ...(editing.row || {}),
-      ...Object.fromEntries(new FormData(e.target)),
-    };
-    fields[p]
-      .filter((f) => f[2] === "number")
-      .forEach((f) => (r[f[0]] = Number(r[f[0]])));
-    r.id = id || D.nextId(state[p], prefixes[p]);
-    const error = validate(p, r);
-    if (error) {
-      toast(error);
-      return;
-    }
-    if (p === "expenses") r.amount = D.roundedAmount(r.amount);
-    if (id) state[p][state[p].findIndex((x) => x.id === id)] = r;
-    else state[p].push(r);
-    save(pages[p][1] + "を保存しました");
-    $("#editor").close();
-    render();
+    return runAction(
+      e.submitter || $('#edit-form button[type="submit"]'),
+      () => {
+        const { p, id } = editing;
+        const r = {
+          ...(editing.row || {}),
+          ...Object.fromEntries(new FormData(e.target)),
+        };
+        fields[p]
+          .filter((f) => f[2] === "number")
+          .forEach((f) => (r[f[0]] = Number(r[f[0]])));
+        r.id = id || D.nextId(state[p], prefixes[p]);
+        const error = validate(p, r);
+        if (error) {
+          toast(error);
+          return;
+        }
+        if (p === "expenses") r.amount = D.roundedAmount(r.amount);
+        if (id) state[p][state[p].findIndex((x) => x.id === id)] = r;
+        else state[p].push(r);
+        save(pages[p][1] + "を保存しました");
+        $("#editor").close();
+        render();
+      },
+    );
   };
   function closeEditor() {
     $("#editor").close();
     editing = null;
     render();
   }
-  $("#close-dialog").onclick = closeEditor;
-  $("#cancel-dialog").onclick = closeEditor;
+  $("#close-dialog").onclick = (e) =>
+    runAction(e.currentTarget, closeEditor, 0);
+  $("#cancel-dialog").onclick = (e) =>
+    runAction(e.currentTarget, closeEditor, 0);
   $("#editor").addEventListener("cancel", () => {
     editing = null;
     setTimeout(render, 0);
