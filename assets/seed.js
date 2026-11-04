@@ -78,6 +78,26 @@
         cleaningCompleted: false,
       },
     ],
+    lostItems: [
+      {
+        id: "F01",
+        title: "紺色の折りたたみ傘",
+        foundDate: "2026-10-10",
+        location: "メインホール",
+        storageDeadline: "2026-11-01",
+        status: "stored",
+        note: "持ち手に白いストラップ",
+      },
+      {
+        id: "F02",
+        title: "学生証ケース",
+        foundDate: "2026-11-03",
+        location: "中庭テント",
+        storageDeadline: "2026-11-20",
+        status: "stored",
+        note: "透明ケース",
+      },
+    ],
     applications: [
       {
         id: "A01",

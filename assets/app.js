@@ -20,6 +20,7 @@
     filterText = "",
     filterStatus = "",
     filterEquipment = "",
+    filterOverdue = false,
     sortKey = "id",
     editing = null,
     actionInProgress = false,
@@ -29,6 +30,7 @@
     state = saved ? JSON.parse(saved) : structuredClone(FestivalSeed);
     if (!Array.isArray(state.groups) || !Array.isArray(state.applications))
       throw Error("形式");
+    if (!Array.isArray(state.lostItems)) state.lostItems = [];
   } catch (e) {
     state = structuredClone(FestivalSeed);
     storageWarning =
@@ -45,6 +47,9 @@
     returned: "返却済み",
     todo: "未着手",
     done: "完了",
+    stored: "保管中",
+    claimed: "返却済み",
+    disposed: "処分済み",
   };
   const pages = {
     dashboard: ["◈", "ダッシュボード", "OVERVIEW"],
@@ -56,6 +61,7 @@
     shifts: ["◷", "スタッフ配置", "STAFF"],
     tasks: ["☑", "タスク", "TASKS"],
     notices: ["◉", "お知らせ", "NOTICES"],
+    lostItems: ["⌕", "落とし物", "LOST & FOUND"],
     settings: ["⚙", "データ管理", "SETTINGS"],
   };
   const fields = {
@@ -124,6 +130,14 @@
       ["date", "掲載日", "date"],
       ["body", "本文", "textarea"],
     ],
+    lostItems: [
+      ["title", "落とし物", "text"],
+      ["foundDate", "発見日", "date"],
+      ["location", "発見場所", "text"],
+      ["storageDeadline", "保管期限", "date"],
+      ["status", "状態", "lostItemStatus"],
+      ["note", "特徴・補足", "textarea"],
+    ],
   };
   const prefixes = {
     groups: "G",
@@ -134,6 +148,7 @@
     shifts: "S",
     tasks: "T",
     notices: "N",
+    lostItems: "F",
   };
   function page() {
     return location.hash.slice(1).split("?")[0] || "dashboard";
@@ -350,6 +365,16 @@
           ["date", "掲載日"],
           ["body", "本文"],
         ];
+      case "lostItems":
+        return [
+          ["id", "ID"],
+          ["title", "落とし物"],
+          ["foundDate", "発見日"],
+          ["location", "発見場所"],
+          ["storageDeadline", "保管期限"],
+          ["status", "状態"],
+          ["_overdue", "期限確認"],
+        ];
     }
   }
   function cell(r, k) {
@@ -378,6 +403,10 @@
       return D.loanOverdue(r, today())
         ? '<span class="badge rejected">期限超過</span>'
         : "—";
+    if (k === "_overdue")
+      return D.lostItemOverdue(r, today())
+        ? '<span class="badge rejected">保管期限超過</span>'
+        : "—";
     return esc(r[k]);
   }
   function renderList(p) {
@@ -404,6 +433,8 @@
     } else {
       rows = D.search(rows, filterText);
     }
+    if (p === "lostItems" && filterOverdue)
+      rows = rows.filter((item) => D.lostItemOverdue(item, today()));
     if (p === "loans" && filterEquipment)
       rows = rows.filter((r) => r.equipmentId === filterEquipment);
     if (filterStatus) rows = rows.filter((r) => r.status === filterStatus);
@@ -418,6 +449,27 @@
       summary = `<div class="stats">${state.equipment.map((e) => stat(esc(e.name), D.available(state, e.id) + "<small> / " + e.stock + "</small>", "貸出可能 / 台帳数")).join("")}</div>`;
     if (p === "reservations")
       summary = `<div class="stats">${state.venues.map((v) => stat(esc(v.name), v.capacity + "<small> 名</small>", "予約 " + D.venueUsage(state, v.id) + " 件")).join("")}</div>`;
+    if (p === "lostItems") {
+      const overdueItems = state.lostItems.filter((item) =>
+        D.lostItemOverdue(item, today()),
+      );
+      const overdueSummary = overdueItems.length
+        ? `<p><span class="badge rejected">期限超過 ${overdueItems.length} 件</span> 保管期限を過ぎた落とし物があります。</p><div class="notice-row">${overdueItems
+            .map(
+              (item) =>
+                `<div><b>${esc(item.title)}</b><small>期限：${esc(item.storageDeadline)} / ${esc(item.location)}</small></div>`,
+            )
+            .join("")}</div>`
+        : '<p class="subtitle">保管期限を過ぎた落とし物はありません。</p>';
+      const overdueFilterButton =
+        overdueItems.length || filterOverdue
+          ? `<button class="secondary small" id="filter-overdue">${filterOverdue ? "すべての落とし物を表示" : "期限超過のみ表示"}</button>`
+          : "";
+      summary = panel(
+        "保管期限の確認",
+        overdueSummary + overdueFilterButton,
+      );
+    }
     const cleaning =
       p === "reservations"
         ? panel(
@@ -511,6 +563,7 @@
       loanStatus: ["reserved", "active", "returned"],
       expenseStatus: ["submitted", "approved", "rejected"],
       taskStatus: ["todo", "active", "done"],
+      lostItemStatus: ["stored", "claimed", "disposed"],
       category: ["備品", "消耗品", "外注", "広報", "その他"],
     };
     return (map[type] || []).map((s) => [s, labels[s] || s]);
@@ -559,6 +612,9 @@
               "due",
               "start",
               "end",
+              "foundDate",
+              "location",
+              "storageDeadline",
             ].includes(f[0]),
           )
           .map((f) => f[0]),
@@ -618,6 +674,12 @@
           filterEquipment = e.target.value;
           render();
         };
+      if ($("#filter-overdue"))
+        $("#filter-overdue").onclick = (e) =>
+          runAction(e.currentTarget, () => {
+            filterOverdue = !filterOverdue;
+            render();
+          }, 0);
       $("#sort").onchange = (e) => {
         sortKey = e.target.value;
         render();
@@ -847,6 +909,7 @@
     filterText = "";
     filterStatus = "";
     filterEquipment = "";
+    filterOverdue = false;
     sortKey = "id";
     render();
   });

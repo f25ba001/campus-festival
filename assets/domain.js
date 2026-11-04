@@ -157,6 +157,9 @@
     loanOverdue(l, today) {
       return l.due < today;
     },
+    lostItemOverdue(item, today) {
+      return item.status === "stored" && item.storageDeadline < today;
+    },
     venueUsage(s, id) {
       return s.reservations.filter(
         (r) => r.venueId === id && r.status !== "cancelled",
