@@ -19,7 +19,11 @@
     },
     expenses(s, groupId) {
       return s.expenses
-        .filter((x) => !groupId || x.groupId === groupId)
+        .filter(
+          (x) =>
+            (!groupId || x.groupId === groupId) &&
+            !["rejected", "差し戻し", "却下", "脚下"].includes(x.status),
+        )
         .reduce((n, x) => n + Number(x.amount), 0);
     },
     remaining(s, groupId) {
