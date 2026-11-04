@@ -253,6 +253,24 @@
         status: "returned",
       },
     ],
+    orders: [
+      {
+        id: "O01",
+        title: "紙コップ 1000個",
+        orderDate: "2026-10-25",
+        status: "ordered",
+        receivedAt: "",
+        receivedBy: "",
+      },
+      {
+        id: "O02",
+        title: "展示パネル",
+        orderDate: "2026-10-24",
+        status: "received",
+        receivedAt: "2026-10-30T14:20",
+        receivedBy: "遠藤 りこ",
+      },
+    ],
     expenses: [
       {
         id: "X01",

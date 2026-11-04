@@ -31,6 +31,7 @@
     if (!Array.isArray(state.groups) || !Array.isArray(state.applications))
       throw Error("形式");
     if (!Array.isArray(state.lostItems)) state.lostItems = [];
+    if (!Array.isArray(state.orders)) state.orders = [];
   } catch (e) {
     state = structuredClone(FestivalSeed);
     storageWarning =
@@ -50,6 +51,8 @@
     stored: "保管中",
     claimed: "返却済み",
     disposed: "処分済み",
+    ordered: "未受領",
+    received: "受領済",
   };
   const pages = {
     dashboard: ["◈", "ダッシュボード", "OVERVIEW"],
@@ -57,6 +60,7 @@
     applications: ["▤", "出店申請", "APPLICATIONS"],
     reservations: ["▦", "会場予約", "VENUES"],
     loans: ["▣", "備品・貸出", "EQUIPMENT"],
+    orders: ["▤", "発注品", "ORDERS"],
     expenses: ["¥", "予算・経費", "FINANCE"],
     shifts: ["◷", "スタッフ配置", "STAFF"],
     tasks: ["☑", "タスク", "TASKS"],
@@ -99,6 +103,13 @@
       ["quantity", "数量", "number"],
       ["due", "返却期限", "date"],
       ["status", "状態", "loanStatus"],
+    ],
+    orders: [
+      ["title", "発注品", "text"],
+      ["orderDate", "発注日", "date"],
+      ["status", "受領ステータス", "orderStatus"],
+      ["receivedAt", "受領日時", "datetime-local"],
+      ["receivedBy", "受領担当者名", "text"],
     ],
     expenses: [
       ["title", "経費名", "text"],
@@ -144,6 +155,7 @@
     applications: "A",
     reservations: "R",
     loans: "L",
+    orders: "O",
     expenses: "X",
     shifts: "S",
     tasks: "T",
@@ -328,6 +340,15 @@
           ["status", "状態"],
           ["_late", "期限確認"],
         ];
+      case "orders":
+        return [
+          ["id", "ID"],
+          ["title", "発注品"],
+          ["orderDate", "発注日"],
+          ["status", "受領ステータス"],
+          ["receivedAt", "受領日時"],
+          ["receivedBy", "受領担当者名"],
+        ];
       case "expenses":
         return [
           ["id", "ID"],
@@ -491,7 +512,9 @@
         pages[p][1],
         p === "loans"
           ? "備品を選んで、返却済みを含む利用団体・代表者と利用目的を確認できます。"
-          : `${state[p].length}件の登録データ。検索・編集して準備を進めましょう。`,
+          : p === "orders"
+            ? "発注品の受領状況、受領日時、受領担当者を記録できます。"
+            : `${state[p].length}件の登録データ。検索・編集して準備を進めましょう。`,
         `<button id="add-row">＋ 新規登録</button>`,
       ) +
       summary +
@@ -561,6 +584,7 @@
       ],
       reservationStatus: ["approved", "cancelled"],
       loanStatus: ["reserved", "active", "returned"],
+      orderStatus: ["ordered", "received"],
       expenseStatus: ["submitted", "approved", "rejected"],
       taskStatus: ["todo", "active", "done"],
       lostItemStatus: ["stored", "claimed", "disposed"],
@@ -582,7 +606,9 @@
         let input;
         if (type === "textarea")
           input = `<textarea name="${k}">${esc(value)}</textarea>`;
-        else if (["text", "number", "date", "time"].includes(type))
+        else if (
+          ["text", "number", "date", "time", "datetime-local"].includes(type)
+        )
           input = `<input name="${k}" type="${type}" ${type === "number" ? 'step="any"' : ""} value="${esc(value)}" ${["title", "name"].includes(k) ? "required" : ""}>`;
         else
           input = `<select name="${k}">${options(type)
@@ -609,6 +635,7 @@
               "venueId",
               "equipmentId",
               "date",
+              "orderDate",
               "due",
               "start",
               "end",
@@ -622,6 +649,12 @@
     )
       return "必須項目を入力してください";
     if (p === "expenses") return D.validateExpense(r);
+    if (
+      p === "orders" &&
+      r.status === "received" &&
+      (!r.receivedAt || !String(r.receivedBy || "").trim())
+    )
+      return "受領済の場合は受領日時と受領担当者名を入力してください";
     if (p === "groups" && D.duplicateGroup(state, r.name, r.id))
       return "同じ名前の団体が存在します";
     if (["applications", "reservations", "shifts"].includes(p)) {
