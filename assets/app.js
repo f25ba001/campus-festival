@@ -579,9 +579,22 @@
       document.querySelectorAll("[data-delete]").forEach(
         (b) =>
           (b.onclick = () => {
+            if (p === "groups") {
+              const references = D.groupReferences(state, b.dataset.delete);
+              if (references.length) {
+                toast(
+                  `関連記録があるため削除できません（${references.join("、")}）。記録を確認してください。`,
+                );
+                return;
+              }
+            }
             if (!confirm("このデータを削除しますか？")) return;
-            if (p === "groups") D.deleteGroup(state, b.dataset.delete);
-            else state[p] = state[p].filter((r) => r.id !== b.dataset.delete);
+            if (p === "groups") {
+              if (!D.deleteGroup(state, b.dataset.delete)) {
+                toast("関連記録があるため削除できません。");
+                return;
+              }
+            } else state[p] = state[p].filter((r) => r.id !== b.dataset.delete);
             save(pages[p][1] + "を削除しました");
             render();
           }),

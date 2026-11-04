@@ -90,8 +90,23 @@
       if (a) a.status = "cancelled";
     },
     deleteGroup(s, id) {
+      if (D.groupReferences(s, id).length) return false;
       s.groups = s.groups.filter((g) => g.id !== id);
       return true;
+    },
+    groupReferences(s, id) {
+      return [
+        ["applications", "出店申請"],
+        ["reservations", "会場予約"],
+        ["loans", "備品貸出"],
+        ["expenses", "経費"],
+        ["shifts", "スタッフ配置"],
+        ["tasks", "タスク"],
+        ["notices", "お知らせ"],
+      ].flatMap(([collection, label]) => {
+        const count = s[collection].filter((r) => r.groupId === id).length;
+        return count ? [`${label}${count}件`] : [];
+      });
     },
     nextId(rows, prefix) {
       return prefix + String(rows.length + 1).padStart(2, "0");
