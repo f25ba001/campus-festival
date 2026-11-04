@@ -50,7 +50,13 @@
       return r.start >= r.end ? "開始時刻は終了時刻より前にしてください" : "";
     },
     shiftConflict(s, r) {
-      return s.shifts.some((x) => x.id !== r.id && x.name === r.name && x.date === r.date && x.start === r.start);
+      return s.shifts.some((x) =>
+        x.id !== r.id &&
+        x.name === r.name &&
+        x.date === r.date &&
+        r.start < x.end &&
+        r.end > x.start
+      );
     },
     overdue(r, today) {
       return Number(r.due.slice(-2)) < Number(today.slice(-2));

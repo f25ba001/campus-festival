@@ -539,6 +539,80 @@ dialog::backdrop {
 .entry-bar .high {
   background: #c95f45;
 }
+@media print {
+  @page {
+    size: A4 landscape;
+    margin: 10mm;
+  }
+  body[data-page="reservations"] {
+    background: white;
+    color: #111;
+    font-size: 10pt;
+  }
+  body[data-page="reservations"] .sidebar,
+  body[data-page="reservations"] header,
+  body[data-page="reservations"] footer,
+  body[data-page="reservations"] .toolbar,
+  body[data-page="reservations"] .page-head button,
+  body[data-page="reservations"] #toast {
+    display: none !important;
+  }
+  body[data-page="reservations"] main {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+  }
+  body[data-page="reservations"] #content {
+    min-height: 0;
+    padding: 0;
+  }
+  body[data-page="reservations"] .page-head {
+    margin-bottom: 12px;
+  }
+  body[data-page="reservations"] .stats {
+    grid-template-columns: repeat(4, 1fr);
+    gap: 6px;
+    margin-bottom: 10px;
+  }
+  body[data-page="reservations"] .stat {
+    padding: 8px;
+    break-inside: avoid;
+  }
+  body[data-page="reservations"] .stat strong {
+    font-size: 18pt;
+    margin: 4px 0;
+  }
+  body[data-page="reservations"] .panel {
+    border: 0;
+    box-shadow: none;
+    margin: 0;
+  }
+  body[data-page="reservations"] .table-scroll {
+    overflow: visible;
+  }
+  body[data-page="reservations"] table {
+    white-space: normal;
+    width: 100%;
+  }
+  body[data-page="reservations"] th,
+  body[data-page="reservations"] td {
+    padding: 8px;
+    border: 1px solid #777;
+    font-size: 9pt;
+  }
+  body[data-page="reservations"] th {
+    background: #eee;
+    color: #111;
+  }
+  body[data-page="reservations"] tr {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+  body[data-page="reservations"] th:last-child,
+  body[data-page="reservations"] td:last-child {
+    display: none;
+  }
+}
 @media (max-width: 700px) {
   .entry-row {
     grid-template-columns: 1fr 48px;

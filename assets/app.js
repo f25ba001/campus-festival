@@ -434,7 +434,9 @@
       head(
         pages[p][1],
         `${state[p].length}件の登録データ。検索・編集して準備を進めましょう。`,
-        `<button id="add-row">＋ 新規登録</button>`,
+        p === "reservations"
+          ? `<button class="secondary" id="print-reservations">印刷する</button><button id="add-row">＋ 新規登録</button>`
+          : `<button id="add-row">＋ 新規登録</button>`,
       ) +
       summary +
       `<div class="toolbar"><div class="filters"><input id="search" type="search" aria-label="一覧を検索" placeholder="キーワードで検索" value="${esc(filterText)}">${statuses.length ? `<select id="status-filter" aria-label="状態で絞り込み"><option value="">すべての状態</option>${statuses.map((s) => `<option value="${s}" ${filterStatus === s ? "selected" : ""}>${labels[s] || s}</option>`).join("")}</select>` : ""}<select id="sort" aria-label="並び順">${cols
@@ -620,6 +622,10 @@
     return "";
   }
   function bind(p) {
+    document.body.dataset.page = p;
+    if (p === "reservations" && $("#print-reservations")) {
+      $("#print-reservations").onclick = () => window.print();
+    }
     if (p === "entranceDashboard") {
       $("#refresh-entrances").onclick = () => {
         state.entrances.forEach((entrance) => {
