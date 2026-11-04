@@ -60,6 +60,25 @@ button.small {
   padding: 6px 10px;
   font-size: 12px;
 }
+.ticket-result {
+  min-height: 48px;
+  margin-top: 18px;
+  padding: 13px 14px;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  background: white;
+  font-weight: 700;
+}
+.ticket-result.error {
+  border-color: #e2a38a;
+  background: #fff0e9;
+  color: #a34426;
+}
+.ticket-result.success {
+  border-color: #acd08a;
+  background: #edf7df;
+  color: #315d26;
+}
 button:disabled {
   opacity: 0.45;
   cursor: default;
@@ -466,6 +485,68 @@ dialog::backdrop {
   justify-content: flex-end;
   gap: 10px;
   margin-top: 24px;
+}
+.confirmation-dialog {
+  width: 520px;
+}
+.preview-list {
+  margin: 14px 0 0;
+  padding: 16px 16px 16px 36px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: white;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 20px;
+}
+.preview-list li {
+  line-height: 1.6;
+}
+.entry-chart {
+  display: grid;
+  gap: 18px;
+}
+.entry-row {
+  display: grid;
+  grid-template-columns: minmax(150px, 220px) minmax(100px, 1fr) 48px;
+  align-items: center;
+  gap: 12px;
+}
+.entry-label {
+  display: grid;
+  gap: 4px;
+}
+.entry-label span {
+  color: var(--muted);
+  font-size: 12px;
+}
+.entry-bar {
+  height: 18px;
+  border-radius: 4px;
+  background: var(--line);
+  overflow: hidden;
+}
+.entry-bar span {
+  display: block;
+  height: 100%;
+  border-radius: 4px;
+}
+.entry-bar .low {
+  background: #74a96b;
+}
+.entry-bar .medium {
+  background: #d29a36;
+}
+.entry-bar .high {
+  background: #c95f45;
+}
+@media (max-width: 700px) {
+  .entry-row {
+    grid-template-columns: 1fr 48px;
+  }
+  .entry-label {
+    grid-column: 1 / -1;
+  }
 }
 #toast {
   position: fixed;

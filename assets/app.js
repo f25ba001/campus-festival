@@ -28,6 +28,15 @@
     state = normalizeState(state);
     if (!Array.isArray(state.groups) || !Array.isArray(state.applications))
       throw Error("形式");
+    if (!Array.isArray(state.tickets)) state.tickets = [];
+    if (!Array.isArray(state.troubles) || state.troubles.length === 0) state.troubles = structuredClone(FestivalSeed.troubles);
+    if (!Array.isArray(state.contacts) || state.contacts.length === 0) state.contacts = structuredClone(FestivalSeed.contacts);
+    if (!Array.isArray(state.attendeeChanges)) state.attendeeChanges = [];
+    if (!Array.isArray(state.sponsors) || state.sponsors.length === 0) state.sponsors = structuredClone(FestivalSeed.sponsors);
+    if (!Array.isArray(state.entrances) || state.entrances.length === 0) state.entrances = structuredClone(FestivalSeed.entrances);
+    state.applications
+      .filter((application) => application.status === "cancelled")
+      .forEach((application) => D.invalidateTickets(state, application.id));
   } catch (e) {
     state = normalizeState(structuredClone(FestivalSeed));
     storageWarning =
@@ -40,11 +49,14 @@
     approved: "責任者確認済み",
     rejected: "差し戻し",
     cancelled: "取消",
-    active: "有効",
-    inactive: "無効",
-    disabled: "貸出停止",
+    active: "対応中",
+    pending: "未対応",
+    waiting: "完了待ち",
+    completed: "完了",
     reserved: "予約",
     returned: "返却済み",
+    active: "有効",
+    invalid: "無効",
     todo: "未着手",
     done: "完了",
   };
@@ -53,10 +65,15 @@
     groups: ["◎", "団体・メンバー", "ORGANIZATIONS"],
     applications: ["▤", "出店申請", "APPLICATIONS"],
     reservations: ["▦", "会場予約", "VENUES"],
+    reception: ["✓", "整理券受付", "RECEPTION"],
     loans: ["▣", "備品・貸出", "EQUIPMENT"],
     expenses: ["¥", "予算・経費", "FINANCE"],
     shifts: ["◷", "スタッフ配置", "STAFF"],
     tasks: ["☑", "タスク", "TASKS"],
+    troubles: ["!", "トラブル対応", "INCIDENTS"],
+    contacts: ["☎", "緊急連絡先", "EMERGENCY CONTACTS"],
+    sponsors: ["◆", "協賛団体", "SPONSORS"],
+    entranceDashboard: ["▥", "入口別来場者", "ENTRY TRAFFIC"],
     notices: ["◉", "お知らせ", "NOTICES"],
     settings: ["⚙", "データ管理", "SETTINGS"],
   };
@@ -121,6 +138,32 @@
       ["status", "状態", "taskStatus"],
       ["note", "補足", "textarea"],
     ],
+    troubles: [
+      ["title", "トラブル内容", "text"],
+      ["location", "場所・エリア", "text"],
+      ["owner", "担当者", "text"],
+      ["reportedAt", "報告日時", "text"],
+      ["status", "進捗ステータス", "troubleStatus"],
+      ["completionCondition", "完了条件", "textarea"],
+      ["note", "対応メモ", "textarea"]
+    ],
+    sponsors: [
+      ["name", "協賛団体名", "text"],
+      ["contact", "窓口担当者", "text"],
+      ["phone", "電話番号", "text"],
+      ["email", "メールアドレス", "text"],
+      ["goods", "協賛品", "text"],
+      ["cash", "協賛金（円）", "number"],
+      ["note", "備考", "textarea"]
+    ],
+    contacts: [
+      ["area", "場所・担当エリア", "text"],
+      ["manager", "当日責任者", "text"],
+      ["managerContact", "責任者連絡先", "text"],
+      ["alternate", "代理責任者", "text"],
+      ["alternateContact", "代理連絡先", "text"],
+      ["note", "備考", "textarea"]
+    ],
     notices: [
       ["title", "件名", "text"],
       ["groupId", "対象団体", "audience"],
@@ -136,6 +179,9 @@
     expenses: "X",
     shifts: "S",
     tasks: "T",
+    troubles: "TR",
+    contacts: "C",
+    sponsors: "SP",
     notices: "N",
   };
   function page() {
@@ -148,7 +194,8 @@
     return "¥" + Number(n).toLocaleString("ja-JP");
   }
   function name(collection, id) {
-    return state[collection].find((r) => r.id === id)?.name || "未設定";
+    const row = state[collection].find((r) => r.id === id);
+    return row?.name || row?.title || "未設定";
   }
   function badge(v) {
     return `<span class="badge ${esc(v)}">${esc(labels[v] || v)}</span>`;
@@ -331,6 +378,33 @@
           ["due", "期限"],
           ["status", "状態"],
         ];
+      case "troubles":
+        return [
+          ["id", "ID"],
+          ["title", "トラブル"],
+          ["location", "場所・エリア"],
+          ["owner", "担当者"],
+          ["status", "進捗"],
+          ["completionCondition", "完了条件"]
+        ];
+      case "sponsors":
+        return [
+          ["id", "ID"],
+          ["name", "協賛団体名"],
+          ["contact", "窓口担当者"],
+          ["phone", "電話番号"],
+          ["goods", "協賛品"],
+          ["cash", "協賛金（円）"]
+        ];
+      case "contacts":
+        return [
+          ["id", "ID"],
+          ["area", "場所・担当エリア"],
+          ["manager", "責任者"],
+          ["managerContact", "責任者連絡先"],
+          ["alternate", "代理"],
+          ["alternateContact", "代理連絡先"]
+        ];
       case "notices":
         return [
           ["id", "ID"],
@@ -347,7 +421,7 @@
     if (k === "venueId") return esc(name("venues", r[k]));
     if (k === "equipmentId") return esc(name("equipment", r[k]));
     if (k === "status") return badge(r[k]);
-    if (k === "amount" || k === "budget") return money(r[k]);
+    if (k === "amount" || k === "budget" || k === "cash") return money(r[k]);
     if (k === "_remaining") return money(D.remaining(state, r.id));
     if (k === "_time") return esc(r.start) + " – " + esc(r.end);
     if (k === "_hours") return D.shiftHours(r) + " h";
@@ -374,6 +448,18 @@
       summary = `<div class="stats">${state.venues.map((v) => stat(esc(v.name), v.capacity + "<small> 名</small>", "予約 " + D.venueUsage(state, v.id) + " 件")).join("")}</div>`;
     if (p === "expenses")
       summary = `<div class="stats">${stat("登録経費合計", money(D.expenses(state)), "全団体の経費")}${stat("総予算", money(state.groups.reduce((n, g) => n + Number(g.budget), 0)), "団体ごとの予算を合算")}</div>`;
+    if (p === "contacts")
+      summary = `<div class="help">緊急時は責任者へ連絡し、応答がない場合は代理連絡先へ連絡してください。</div>`;
+    if (p === "sponsors") {
+      const totalCash = state.sponsors.reduce((sum, sponsor) => sum + Number(sponsor.cash || 0), 0);
+      summary = `<div class="stats">${stat("協賛団体数", state.sponsors.length + "<small> 件</small>", "登録協賛先")}${stat("協賛金合計", money(totalCash), "協賛金の合計")}</div>`;
+    }
+    if (p === "applications" || p === "reservations") {
+      const changes = state.attendeeChanges.filter((change) => change.entity === p.slice(0, -1).replace("application", "applications").replace("reservation", "reservations") || change.entity === p);
+      if (changes.length) {
+        summary += `<div class="panel"><div class="panel-title"><h2>来場人数変更履歴</h2></div><div class="table-scroll"><table><thead><tr><th>対象</th><th>修正前</th><th>修正後</th><th>理由</th><th>修正者</th><th>日時</th></tr></thead><tbody>${changes.map((change) => `<tr><td>${esc(change.entityId)}</td><td>${esc(change.before)}</td><td>${esc(change.after)}</td><td>${esc(change.reason)}</td><td>${esc(change.editor)}</td><td>${esc(change.at)}</td></tr>`).join("")}</tbody></table></div></div>`;
+      }
+    }
     const exportButton =
       '<button class="secondary" id="export-csv">CSV出力</button>';
     return (
@@ -394,6 +480,24 @@
         )}</select><span class="subtitle">${rows.length} 件表示</span></div>${exportButton}</div>` +
       `<div class="panel"><div class="table-scroll"><table><thead><tr>${cols.map((c) => `<th>${c[1]}</th>`).join("")}<th>操作</th></tr></thead><tbody>${rows.length ? rows.map((r) => `<tr>${cols.map((c) => `<td class="${["title", "body", "name"].includes(c[0]) ? "description" : ""}">${cell(r, c[0])}</td>`).join("")}<td><div class="actions"><button class="secondary small" data-edit="${esc(r.id)}">編集</button>${p === "applications" ? `<button class="small" data-copy="${esc(r.id)}">複製</button><button class="small" data-approve="${esc(r.id)}">承認</button><button class="danger small" data-cancel="${esc(r.id)}">取消</button>` : ""}${p === "loans" ? `<button class="small" data-return="${esc(r.id)}">返却</button>` : ""}${p === "tasks" ? `<button class="small" data-done="${esc(r.id)}">完了</button>` : ""}<button class="danger small" data-delete="${esc(r.id)}">削除</button></div></td></tr>`).join("") : `<tr><td colspan="${cols.length + 1}" class="empty">該当するデータはありません。</td></tr>`}</tbody></table></div></div>`
     );
+  }
+  function renderReception() {
+    return (
+      head("整理券受付", "コード照合と二重使用チェックを行います。") +
+      `<div class="panel"><div class="panel-title"><h2>整理券照合</h2></div><div class="panel-body"><form id="ticket-form"><div class="field"><label for="ticket-code">整理券コード</label><input id="ticket-code" name="code" autocomplete="off" placeholder="例: A01-0001" required></div><button type="submit">照合する</button></form><div id="ticket-result" class="ticket-result" role="alert" aria-live="assertive"></div></div></div>` +
+      `<div class="panel"><div class="panel-title"><h2>受付済み整理券</h2></div><div class="table-scroll"><table><thead><tr><th>コード</th><th>企画</th><th>状態</th><th>使用日時</th></tr></thead><tbody>${state.tickets.map((ticket) => `<tr><td class="mono">${esc(ticket.code)}</td><td>${esc(name("applications", ticket.applicationId))}</td><td>${badge(ticket.status)}</td><td>${ticket.usedAt ? esc(new Date(ticket.usedAt).toLocaleString("ja-JP")) : "—"}</td></tr>`).join("") || '<tr><td colspan="4" class="empty">整理券はありません。</td></tr>'}</tbody></table></div></div>`
+    );
+  }
+  function renderEntranceDashboard() {
+    const total = state.entrances.reduce((sum, entrance) => sum + Number(entrance.count), 0);
+    const peak = [...state.entrances].sort((a, b) => Number(b.count) - Number(a.count))[0];
+    const bars = state.entrances.map((entrance) => {
+      const ratio = entrance.capacity > 0 ? Math.min(100, Math.round((Number(entrance.count) / Number(entrance.capacity)) * 100)) : 0;
+      return `<div class="entry-row"><div class="entry-label"><b>${esc(entrance.name)}</b><span>${Number(entrance.count).toLocaleString("ja-JP")}人 / 定員${Number(entrance.capacity).toLocaleString("ja-JP")}人</span></div><div class="entry-bar"><span style="width:${ratio}%" class="${ratio >= 90 ? "high" : ratio >= 70 ? "medium" : "low"}"></span></div><strong>${ratio}%</strong></div>`;
+    }).join("");
+    return head("入口別来場者", "入口ごとの人数と混雑状況をリアルタイムに比較します。") +
+      `<div class="stats">${stat("総来場者数", total.toLocaleString("ja-JP") + "<small> 人</small>", "全入口の合計")}${stat("最多入口", esc(peak?.name || "未設定"), "現在 " + Number(peak?.count || 0).toLocaleString("ja-JP") + " 人")}${stat("集計入口数", state.entrances.length + "<small> か所</small>", "比較対象")}</div>` +
+      `<div class="panel"><div class="panel-title"><h2>入口別比較</h2><button class="secondary small" id="refresh-entrances">人数を更新</button></div><div class="panel-body entry-chart">${bars}</div></div>`;
   }
   function renderSettings() {
     const audits = state.audit?.slice(0, 8) ?? [];
@@ -444,9 +548,13 @@
       (storageWarning ? `<div class="help">${esc(storageWarning)}</div>` : "") +
       (p === "dashboard"
         ? renderDashboard()
-        : p === "settings"
-          ? renderSettings()
-          : renderList(p));
+        : p === "reception"
+          ? renderReception()
+          : p === "entranceDashboard"
+            ? renderEntranceDashboard()
+            : p === "settings"
+              ? renderSettings()
+              : renderList(p));
     bind(p);
   }
   function options(type) {
@@ -478,6 +586,7 @@
       taskStatus: ["todo", "active", "done"],
       groupStatus: ["active", "inactive"],
       category: ["備品", "消耗品", "外注", "広報", "その他"],
+      troubleStatus: ["pending", "active", "waiting", "completed"],
     };
     return (map[type] || []).map((s) => [s, labels[s] || s]);
   }
@@ -508,6 +617,9 @@
         return `<div class="field"><label for="field-${k}">${label}</label>${input.replace('name="' + k + '"', 'id="field-' + k + '" name="' + k + '"')}</div>`;
       })
       .join("");
+    if ((p === "applications" || p === "reservations") && original) {
+      $("#form-fields").insertAdjacentHTML("beforeend", '<div class="field"><label for="field-attendeeChangeReason">来場人数変更理由</label><textarea id="field-attendeeChangeReason" name="attendeeChangeReason"></textarea></div><div class="field"><label for="field-attendeeChangeEditor">修正者</label><input id="field-attendeeChangeEditor" name="attendeeChangeEditor" value="実行委員"></div>');
+    }
     $("#editor").showModal();
   }
   function validate(p, r) {
@@ -532,21 +644,10 @@
       )
     )
       return "必須項目を入力してください";
-    if (p === "expenses") {
-      const previous = state.expenses.find((x) => x.id === r.id);
-      const err = D.validateExpense(r);
+    if (p === "expenses") return D.validateExpense(r);
+    if (p === "troubles") {
+      const err = D.validateTrouble(r);
       if (err) return err;
-      if (
-        !D.canExpenseStatusTransition(
-          r.amount,
-          previous ? previous.status : "",
-          r.status,
-        )
-      )
-        return D.isHighValueExpense(r.amount)
-          ? "3万円以上の経費は、担当確認後に責任者確認してください"
-          : "";
-      return "";
     }
     if (p === "groups" && D.duplicateGroup(state, r.name, r.id))
       return "同じ名前の団体が存在します";
@@ -580,6 +681,32 @@
     return "";
   }
   function bind(p) {
+    if (p === "entranceDashboard") {
+      $("#refresh-entrances").onclick = () => {
+        state.entrances.forEach((entrance) => {
+          const count = window.prompt(entrance.name + "の現在の来場人数", String(entrance.count));
+          if (count !== null && String(count).trim() !== "") entrance.count = Math.max(0, Number(count) || 0);
+        });
+        save("入口別来場者数を更新しました");
+        render();
+      };
+    }
+    if (p === "reception") {
+      $("#ticket-form").onsubmit = (event) => {
+        event.preventDefault();
+        const code = new FormData(event.target).get("code");
+        const result = D.useTicket(state, code);
+        const box = $("#ticket-result");
+        if (!result.ok) {
+          box.className = "ticket-result error";
+          box.textContent = "エラー：" + result.error;
+          return;
+        }
+        box.className = "ticket-result success";
+        box.textContent = "照合成功：入場を記録しました（" + result.ticket.code + "）";
+        save("整理券を受付で使用しました：" + result.ticket.code);
+      };
+    }
     if (fields[p]) {
       $("#add-row").onclick = () => openEditor(p);
       $("#search").oninput = (e) => {
@@ -598,15 +725,12 @@
         sortKey = e.target.value;
         render();
       };
-      $("#export-csv").onclick = () =>
-        download(
-          p + ".csv",
-          D.csv(
-            state[p],
-            fields[p].map((f) => f[0]),
-          ),
-          "text/csv",
-        );
+      $("#export-csv").onclick = () => {
+        const csvColumns = columns(p);
+        const labels = Object.fromEntries(csvColumns.map((column) => [column[0], column[1]]));
+        const keys = csvColumns.map((column) => column[0]);
+        download(p + ".csv", D.csv(state[p], keys, labels), "text/csv");
+      };
       document
         .querySelectorAll("[data-edit]")
         .forEach((b) => (b.onclick = () => openEditor(p, b.dataset.edit)));
@@ -664,8 +788,8 @@
         (b) =>
           (b.onclick = () => {
             if (!confirm("出店を取り消しますか？")) return;
-            D.cancelApplication(state, b.dataset.cancel);
-            save("出店を取り消しました");
+            const invalidated = D.cancelApplication(state, b.dataset.cancel);
+            save("出店を取り消しました" + (invalidated ? "（整理券" + invalidated + "件を無効化）" : ""));
             render();
           }),
       );
@@ -744,10 +868,20 @@
         }
       };
       $("#reset").onclick = () => {
-        if (!confirm("編集内容を破棄し、初期データへ戻しますか？")) return;
-        resetToSeedState();
-        logAudit("初期化", "初期データへ戻す", "system");
-        toast("初期データへ戻しました");
+        const previewLabels = { groups: "団体", venues: "会場", applications: "企画・申請", reservations: "予約", equipment: "備品", loans: "貸出", expenses: "経費", shifts: "スタッフ配置", tasks: "タスク", troubles: "トラブル", contacts: "緊急連絡先", tickets: "整理券", attendeeChanges: "来場人数変更履歴", notices: "お知らせ" };
+        const preview = Object.entries(state)
+          .filter(([key, value]) => key !== "activity" && Array.isArray(value))
+          .map(([key, value]) => `<li>${esc(previewLabels[key] || key)}: <b>${value.length}件</b></li>`)
+          .join("");
+        $("#reset-preview-list").innerHTML = preview;
+        $("#reset-dialog").showModal();
+      };
+      $("#reset-cancel").onclick = () => $("#reset-dialog").close();
+      $("#reset-confirm").onclick = () => {
+        $("#reset-dialog").close();
+        state = structuredClone(FestivalSeed);
+        storageWarning = "";
+        save("初期データへ戻しました");
         render();
       };
       $("#current-group").onchange = (e) => {
@@ -778,9 +912,31 @@
       return;
     }
     if (p === "expenses") r.amount = D.roundedAmount(r.amount);
+    if ((p === "applications" || p === "reservations") && id && editing.original) {
+      const previous = Number(editing.original.attendees);
+      const next = Number(r.attendees);
+      if (previous !== next) {
+        const reason = String(r.attendeeChangeReason ?? "").trim();
+        const editor = String(r.attendeeChangeEditor ?? "").trim();
+        if (!reason) {
+          toast("来場人数を変更した場合は修正理由を入力してください");
+          return;
+        }
+        if (!editor) {
+          toast("修正者を入力してください");
+          return;
+        }
+        state.attendeeChanges.push({ id: D.nextId(state.attendeeChanges, "AC"), entity: p, entityId: id, before: previous, after: next, reason, editor, at: new Date().toISOString() });
+      }
+      delete r.attendeeChangeReason;
+      delete r.attendeeChangeEditor;
+    }
     if (id) state[p][state[p].findIndex((x) => x.id === id)] = r;
     else state[p].push(r);
-    logAudit("保存", pages[p][1], p, r.id);
+    if (p === "applications" && r.status === "cancelled") {
+      const invalidated = D.invalidateTickets(state, r.id);
+      if (invalidated > 0) toast(invalidated + "件の整理券を無効化しました");
+    }
     save(pages[p][1] + "を保存しました");
     $("#editor").close();
     render();

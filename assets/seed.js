@@ -323,6 +323,33 @@
         note: "確認済み",
       },
     ],
+    tickets: [
+      { id: "TKT01", code: "A01-0001", applicationId: "A01", status: "active", used: false, usedAt: null },
+      { id: "TKT02", code: "A01-0002", applicationId: "A01", status: "active", used: false, usedAt: null },
+      { id: "TKT03", code: "A03-0001", applicationId: "A03", status: "active", used: true, usedAt: "2026-11-14T10:00:00.000Z" },
+      { id: "TKT04", code: "A07-0001", applicationId: "A07", status: "invalid", used: false, usedAt: null }
+    ],
+    troubles: [
+      { id: "TR01", title: "マイクから音が出ない", location: "ステージ", owner: "田中 つむぎ", status: "pending", reportedAt: "2026-11-14 09:20", completionCondition: "音響担当者による入力確認と2回目の再生確認が完了", note: "予備マイクを準備" },
+      { id: "TR02", title: "受付案内表示の位置変更", location: "総合受付", owner: "佐藤 ひなた", status: "waiting", reportedAt: "2026-11-14 09:35", completionCondition: "変更後の案内板で来場者が迷わないことを責任者が確認", note: "運営本部へ連絡済み" }
+    ],
+    contacts: [
+      { id: "C01", area: "総合受付", manager: "佐藤 ひなた", managerContact: "090-1111-2222", alternate: "青木 はる", alternateContact: "090-3333-4444", note: "受付トラブル全般" },
+      { id: "C02", area: "ステージ", manager: "田中 つむぎ", managerContact: "090-5555-6666", alternate: "上田 そう", alternateContact: "090-7777-8888", note: "音響・進行トラブル" },
+      { id: "C03", area: "中庭テント", manager: "石井 みな", managerContact: "090-9999-0000", alternate: "鈴木 いつき", alternateContact: "090-1212-3434", note: "屋外エリアと食品販売" }
+    ],
+    attendeeChanges: [],
+    sponsors: [
+      { id: "SP01", name: "青葉商事株式会社", contact: "営業企画部 / 田村", phone: "042-111-2233", email: "sponsor@aoba.example.jp", goods: "飲料500本", cash: 150000, note: "当日受付前に納品" },
+      { id: "SP02", name: "キャンパスフード協同組合", contact: "広報担当 / 小林", phone: "042-222-3344", email: "info@campusfood.example.jp", goods: "弁当100食", cash: 50000, note: "中庭テントへ配送" },
+      { id: "SP03", name: "未来テック研究所", contact: "地域連携 / 佐野", phone: "042-333-4455", email: "community@futuretech.example.jp", goods: "ノベルティ250個", cash: 200000, note: "展示ブース協賛" }
+    ],
+    entrances: [
+      { id: "EN01", name: "正門", count: 184, capacity: 300 },
+      { id: "EN02", name: "東門", count: 126, capacity: 200 },
+      { id: "EN03", name: "西門", count: 98, capacity: 180 },
+      { id: "EN04", name: "駅入口", count: 211, capacity: 250 }
+    ],
     notices: [
       {
         id: "N01",

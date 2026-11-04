@@ -39,6 +39,17 @@
       </footer>
     </main>
     <div id="toast" role="status"></div>
+    <dialog id="reset-dialog" class="confirmation-dialog">
+      <div class="dialog-head">
+        <h2>初期データへ戻しますか？</h2>
+      </div>
+      <p>実行すると、現在の編集内容は初期データで置き換えられます。対象件数は次のとおりです。</p>
+      <ul id="reset-preview-list" class="preview-list"></ul>
+      <div class="dialog-actions">
+        <button type="button" id="reset-cancel" class="secondary">キャンセル</button>
+        <button type="button" id="reset-confirm" class="danger">初期化を実行する</button>
+      </div>
+    </dialog>
     <dialog id="editor">
       <form id="edit-form">
         <div class="dialog-head">
