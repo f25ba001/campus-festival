@@ -148,6 +148,7 @@
       return { ...row, status: "submitted" };
     },
     loanOverdue(l, today) {
+      if (!l || l.status === "returned") return false;
       return l.due < today;
     },
     venueUsage(s, id) {
