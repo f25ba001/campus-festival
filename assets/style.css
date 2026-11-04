@@ -427,6 +427,7 @@ dialog {
   max-height: 90vh;
   overflow: auto;
   color: var(--ink);
+  z-index: 1000;
 }
 dialog::backdrop {
   background: #17372f88;
@@ -476,8 +477,9 @@ dialog::backdrop {
   color: white;
   border-radius: 8px;
   display: none;
-  z-index: 10;
+  z-index: 2000;
   max-width: 80vw;
+  box-shadow: 0 8px 18px rgba(23, 63, 51, 0.28);
 }
 .help {
   padding: 16px 20px;

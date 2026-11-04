@@ -25,10 +25,11 @@
   try {
     const saved = localStorage.getItem(KEY);
     state = saved ? JSON.parse(saved) : structuredClone(FestivalSeed);
+    state = normalizeState(state);
     if (!Array.isArray(state.groups) || !Array.isArray(state.applications))
       throw Error("形式");
   } catch (e) {
-    state = structuredClone(FestivalSeed);
+    state = normalizeState(structuredClone(FestivalSeed));
     storageWarning =
       "保存済みデータを読み込めなかったため、初期データを表示しています。必要ならバックアップから復元してください。";
   }
@@ -39,7 +40,9 @@
     approved: "責任者確認済み",
     rejected: "差し戻し",
     cancelled: "取消",
-    active: "対応中",
+    active: "有効",
+    inactive: "無効",
+    disabled: "貸出停止",
     reserved: "予約",
     returned: "返却済み",
     todo: "未着手",
@@ -63,6 +66,7 @@
       ["representative", "代表者", "text"],
       ["members", "所属人数", "number"],
       ["budget", "予算（円）", "number"],
+      ["active", "状態", "groupStatus"],
     ],
     applications: [
       ["title", "企画名", "text"],
@@ -178,7 +182,7 @@
     }
   }
   function resetToSeedState() {
-    state = structuredClone(FestivalSeed);
+    state = normalizeState(structuredClone(FestivalSeed));
     storageWarning = "";
     filterText = "";
     filterStatus = "";
@@ -191,6 +195,7 @@
   function save(message) {
     state.activity.unshift({ at: new Date().toISOString(), message });
     state.activity = state.activity.slice(0, 100);
+    if (message) logAudit(message, message, "system");
     if (!persistState()) return;
     if (message) toast(message);
   }
@@ -387,14 +392,39 @@
         .join(
           "",
         )}</select><span class="subtitle">${rows.length} 件表示</span></div>${exportButton}</div>` +
-      `<div class="panel"><div class="table-scroll"><table><thead><tr>${cols.map((c) => `<th>${c[1]}</th>`).join("")}<th>操作</th></tr></thead><tbody>${rows.length ? rows.map((r) => `<tr>${cols.map((c) => `<td class="${["title", "body", "name"].includes(c[0]) ? "description" : ""}">${cell(r, c[0])}</td>`).join("")}<td><div class="actions"><button class="secondary small" data-edit="${esc(r.id)}">編集</button>${p === "applications" ? `<button class="small" data-approve="${esc(r.id)}">承認</button><button class="danger small" data-cancel="${esc(r.id)}">取消</button>` : ""}${p === "loans" ? `<button class="small" data-return="${esc(r.id)}">返却</button>` : ""}${p === "tasks" ? `<button class="small" data-done="${esc(r.id)}">完了</button>` : ""}<button class="danger small" data-delete="${esc(r.id)}">削除</button></div></td></tr>`).join("") : `<tr><td colspan="${cols.length + 1}" class="empty">該当するデータはありません。</td></tr>`}</tbody></table></div></div>`
+      `<div class="panel"><div class="table-scroll"><table><thead><tr>${cols.map((c) => `<th>${c[1]}</th>`).join("")}<th>操作</th></tr></thead><tbody>${rows.length ? rows.map((r) => `<tr>${cols.map((c) => `<td class="${["title", "body", "name"].includes(c[0]) ? "description" : ""}">${cell(r, c[0])}</td>`).join("")}<td><div class="actions"><button class="secondary small" data-edit="${esc(r.id)}">編集</button>${p === "applications" ? `<button class="small" data-copy="${esc(r.id)}">複製</button><button class="small" data-approve="${esc(r.id)}">承認</button><button class="danger small" data-cancel="${esc(r.id)}">取消</button>` : ""}${p === "loans" ? `<button class="small" data-return="${esc(r.id)}">返却</button>` : ""}${p === "tasks" ? `<button class="small" data-done="${esc(r.id)}">完了</button>` : ""}<button class="danger small" data-delete="${esc(r.id)}">削除</button></div></td></tr>`).join("") : `<tr><td colspan="${cols.length + 1}" class="empty">該当するデータはありません。</td></tr>`}</tbody></table></div></div>`
     );
   }
   function renderSettings() {
+    const audits = state.audit?.slice(0, 8) ?? [];
     return (
       head("データを、手元に。", "保存・復元と、操作する団体を管理します。") +
-      `<div class="help">これはブラウザ内で動く演習用システムです。ログイン認証や共同データ保存はありません。役割・団体の切り替えは業務操作の体験用です。同じデータで確認するときはJSONファイルを共有してください。端末やブラウザが変わると保存先も変わります。</div><div class="settings-grid">${panel("バックアップ", '<p>現在の業務データをJSONファイルとして保存します。</p><button id="backup">JSONを書き出す</button>')}${panel("データを復元", '<p>JSONファイルを読み込み、現在のデータを置き換えます。</p><input id="restore-file" aria-label="復元するJSON" type="file" accept=".json"><div id="restore-preview" class="help" hidden></div><button id="restore" class="secondary">読み込む</button>')}${panel("操作する団体", `<p>団体代表として表示する団体を選択します。</p><select id="current-group" aria-label="操作する団体">${state.groups.map((g) => `<option value="${g.id}" ${g.id === state.groupId ? "selected" : ""}>${esc(g.name)}</option>`).join("")}</select>`)}${panel("サンプルデータへ戻す", '<p>編集内容を破棄して、最初の状態に戻します。実行前にバックアップを保存してください。</p><button id="reset" class="danger">初期データへ戻す</button>')}</div>`
+      `<div class="help">これはブラウザ内で動く演習用システムです。ログイン認証や共同データ保存はありません。役割・団体の切り替えは業務操作の体験用です。同じデータで確認するときはJSONファイルを共有してください。端末やブラウザが変わると保存先も変わります。</div><div class="settings-grid">${panel("バックアップ", '<p>現在の業務データをJSONファイルとして保存します。</p><button id="backup">JSONを書き出す</button>')}${panel("データを復元", '<p>JSONファイルを読み込み、現在のデータを置き換えます。</p><input id="restore-file" aria-label="復元するJSON" type="file" accept=".json"><div id="restore-preview" class="help" hidden></div><button id="restore" class="secondary">読み込む</button>')}${panel("操作する団体", `<p>団体代表として表示する団体を選択します。</p><select id="current-group" aria-label="操作する団体">${state.groups.map((g) => `<option value="${g.id}" ${g.id === state.groupId ? "selected" : ""}>${esc(g.name)}</option>`).join("")}</select>`)}${panel("監査ログ", audits.length ? audits.map((a) => `<div class="notice-row"><small>${esc(new Date(a.at).toLocaleString("ja-JP"))} / ${esc(a.role || "system")}</small><b>${esc(a.action)}</b><span>${esc(a.detail || a.entityType || "")}</span></div>`).join("") : '<p>記録された操作はまだありません。</p>')}${panel("サンプルデータへ戻す", '<p>編集内容を破棄して、最初の状態に戻します。実行前にバックアップを保存してください。</p><button id="reset" class="danger">初期データへ戻す</button>')}</div>`
     );
+  }
+  function normalizeState(target) {
+    if (!target || typeof target !== "object") return target;
+    target.groups = Array.isArray(target.groups) ? target.groups.map((g) => ({ ...g, active: g.active !== false })) : [];
+    target.activity = Array.isArray(target.activity) ? target.activity : [];
+    target.audit = Array.isArray(target.audit) ? target.audit : [];
+    target.equipment = Array.isArray(target.equipment)
+      ? target.equipment.map((e) => ({ ...e, status: e.status || "active", serialId: e.serialId || e.id }))
+      : [];
+    target.groupId = target.groupId || target.groups[0]?.id || "G01";
+    target.role = target.role || "admin";
+    return target;
+  }
+  function logAudit(action, detail = "", entityType = "system", entityId = "") {
+    state.audit = Array.isArray(state.audit) ? state.audit : [];
+    state.audit.unshift({
+      at: new Date().toISOString(),
+      role: state.role || "system",
+      action,
+      detail,
+      entityType,
+      entityId,
+    });
+    state.audit = state.audit.slice(0, 200);
   }
   function render() {
     let p = page();
@@ -420,11 +450,13 @@
     bind(p);
   }
   function options(type) {
-    if (type === "group" || type === "audience")
+    if (type === "group" || type === "audience") {
+      const groups = state.groups.filter((g) => g.active !== false);
       return [
         ...(type === "audience" ? [["all", "全体"]] : []),
-        ...state.groups.map((g) => [g.id, g.name]),
+        ...groups.map((g) => [g.id, g.name]),
       ];
+    }
     if (type === "venue") return state.venues.map((v) => [v.id, v.name]);
     if (type === "equipment") return state.equipment.map((e) => [e.id, e.name]);
     if (type === "application")
@@ -444,15 +476,17 @@
       loanStatus: ["reserved", "active", "returned"],
       expenseStatus: ["submitted", "reviewed", "approved", "rejected"],
       taskStatus: ["todo", "active", "done"],
+      groupStatus: ["active", "inactive"],
       category: ["備品", "消耗品", "外注", "広報", "その他"],
     };
     return (map[type] || []).map((s) => [s, labels[s] || s]);
   }
-  function openEditor(p, id) {
+  function openEditor(p, id, preset = null) {
     const original = id ? state[p].find((r) => r.id === id) : null;
-    let row = original ? D.editCopy(original) : {};
-    if (p === "expenses" && original) row = D.expenseForEdit(original);
-    editing = { p, id, row, original };
+    let row = preset ? { ...preset } : original ? D.editCopy(original) : {};
+    if (p === "expenses" && original && !preset) row = D.expenseForEdit(original);
+    if (row && row.id === undefined && !preset) delete row.id;
+    editing = { p, id: id || null, row, original };
     $("#dialog-title").textContent =
       pages[p][1] + " / " + (id ? "編集" : "新規登録");
     $("#form-fields").innerHTML = fields[p]
@@ -582,9 +616,25 @@
             if (!confirm("このデータを削除しますか？")) return;
             if (p === "groups") D.deleteGroup(state, b.dataset.delete);
             else state[p] = state[p].filter((r) => r.id !== b.dataset.delete);
+            logAudit("削除", pages[p][1], p, b.dataset.delete);
             save(pages[p][1] + "を削除しました");
             render();
           }),
+      );
+      document.querySelectorAll("[data-copy]").forEach(
+        (b) => {
+          b.onclick = () => {
+            const app = state.applications.find((x) => x.id === b.dataset.copy);
+            if (!app) return;
+            const copy = {
+              ...app,
+              id: undefined,
+              status: "draft",
+              title: app.title + "（複製）",
+            };
+            openEditor("applications", null, copy);
+          };
+        },
       );
       document.querySelectorAll("[data-approve]").forEach(
         (b) =>
@@ -696,6 +746,7 @@
       $("#reset").onclick = () => {
         if (!confirm("編集内容を破棄し、初期データへ戻しますか？")) return;
         resetToSeedState();
+        logAudit("初期化", "初期データへ戻す", "system");
         toast("初期データへ戻しました");
         render();
       };
@@ -729,6 +780,7 @@
     if (p === "expenses") r.amount = D.roundedAmount(r.amount);
     if (id) state[p][state[p].findIndex((x) => x.id === id)] = r;
     else state[p].push(r);
+    logAudit("保存", pages[p][1], p, r.id);
     save(pages[p][1] + "を保存しました");
     $("#editor").close();
     render();

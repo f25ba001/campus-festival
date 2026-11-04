@@ -39,6 +39,7 @@
     },
     available(s, id) {
       const e = s.equipment.find((e) => e.id === id);
+      if (!e || e.status === "disabled") return 0;
       return e
         ? e.stock -
             s.loans
@@ -110,6 +111,9 @@
     deleteGroup(s, id) {
       s.groups = s.groups.filter((g) => g.id !== id);
       return true;
+    },
+    activeGroups(s) {
+      return s.groups.filter((g) => g.active !== false);
     },
     nextId(rows, prefix) {
       const max = rows.reduce((n, row) => {
