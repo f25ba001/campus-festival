@@ -53,6 +53,8 @@
     disposed: "処分済み",
     ordered: "未受領",
     received: "受領済",
+    notArrived: "未着",
+    damaged: "破損・初期不良",
   };
   const pages = {
     dashboard: ["◈", "ダッシュボード", "OVERVIEW"],
@@ -584,7 +586,7 @@
       ],
       reservationStatus: ["approved", "cancelled"],
       loanStatus: ["reserved", "active", "returned"],
-      orderStatus: ["ordered", "received"],
+      orderStatus: ["ordered", "received", "notArrived", "damaged"],
       expenseStatus: ["submitted", "approved", "rejected"],
       taskStatus: ["todo", "active", "done"],
       lostItemStatus: ["stored", "claimed", "disposed"],
