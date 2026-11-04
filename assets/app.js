@@ -20,6 +20,7 @@
     filterText = "",
     filterStatus = "",
     filterEquipment = "",
+    filterSupplierCategory = "",
     filterOverdue = false,
     sortKey = "id",
     editing = null,
@@ -32,6 +33,7 @@
       throw Error("形式");
     if (!Array.isArray(state.lostItems)) state.lostItems = [];
     if (!Array.isArray(state.orders)) state.orders = [];
+    if (!Array.isArray(state.suppliers)) state.suppliers = [];
   } catch (e) {
     state = structuredClone(FestivalSeed);
     storageWarning =
@@ -63,6 +65,7 @@
     reservations: ["▦", "会場予約", "VENUES"],
     loans: ["▣", "備品・貸出", "EQUIPMENT"],
     orders: ["▤", "発注品", "ORDERS"],
+    suppliers: ["☎", "業者連絡先", "SUPPLIERS"],
     expenses: ["¥", "予算・経費", "FINANCE"],
     shifts: ["◷", "スタッフ配置", "STAFF"],
     tasks: ["☑", "タスク", "TASKS"],
@@ -113,6 +116,16 @@
       ["receivedAt", "受領日時", "datetime-local"],
       ["receivedBy", "受領担当者名", "text"],
     ],
+    suppliers: [
+      ["name", "業者名", "text"],
+      ["category", "業者区分", "supplierCategory"],
+      ["contactName", "担当者名", "text"],
+      ["phone", "電話番号", "tel"],
+      ["email", "メールアドレス", "email"],
+      ["website", "Webサイト", "url"],
+      ["address", "所在地", "text"],
+      ["note", "備考", "textarea"],
+    ],
     expenses: [
       ["title", "経費名", "text"],
       ["groupId", "団体", "group"],
@@ -158,6 +171,7 @@
     reservations: "R",
     loans: "L",
     orders: "O",
+    suppliers: "P",
     expenses: "X",
     shifts: "S",
     tasks: "T",
@@ -351,6 +365,18 @@
           ["receivedAt", "受領日時"],
           ["receivedBy", "受領担当者名"],
         ];
+      case "suppliers":
+        return [
+          ["id", "ID"],
+          ["name", "業者名"],
+          ["category", "業者区分"],
+          ["contactName", "担当者名"],
+          ["phone", "電話番号"],
+          ["email", "メールアドレス"],
+          ["website", "Webサイト"],
+          ["address", "所在地"],
+          ["note", "備考"],
+        ];
       case "expenses":
         return [
           ["id", "ID"],
@@ -418,6 +444,8 @@
       return application ? esc(application.title) : "用途未登録";
     }
     if (k === "status") return badge(r[k]);
+    if (k === "category" && typeof r[k] === "string")
+      return esc(labels[r[k]] || r[k]);
     if (k === "amount" || k === "budget") return money(r[k]);
     if (k === "_remaining") return money(D.remaining(state, r.id));
     if (k === "_time") return esc(r.start) + " – " + esc(r.end);
@@ -460,6 +488,8 @@
       rows = rows.filter((item) => D.lostItemOverdue(item, today()));
     if (p === "loans" && filterEquipment)
       rows = rows.filter((r) => r.equipmentId === filterEquipment);
+    if (p === "suppliers" && filterSupplierCategory)
+      rows = rows.filter((r) => r.category === filterSupplierCategory);
     if (filterStatus) rows = rows.filter((r) => r.status === filterStatus);
     rows =
       p === "tasks" && sortKey === "id"
@@ -521,7 +551,7 @@
       ) +
       summary +
       cleaning +
-      `<div class="toolbar"><div class="filters"><input id="search" type="search" aria-label="一覧を検索" placeholder="キーワードで検索" value="${esc(filterText)}">${p === "loans" ? `<select id="equipment-filter" aria-label="備品で絞り込み"><option value="">すべての備品</option>${state.equipment.map((e) => `<option value="${esc(e.id)}" ${filterEquipment === e.id ? "selected" : ""}>${esc(e.name)}</option>`).join("")}</select>` : ""}${statuses.length ? `<select id="status-filter" aria-label="状態で絞り込み"><option value="">すべての状態</option>${statuses.map((s) => `<option value="${s}" ${filterStatus === s ? "selected" : ""}>${labels[s] || s}</option>`).join("")}</select>` : ""}<select id="sort" aria-label="並び順">${cols
+      `<div class="toolbar"><div class="filters"><input id="search" type="search" aria-label="一覧を検索" placeholder="キーワードで検索" value="${esc(filterText)}">${p === "loans" ? `<select id="equipment-filter" aria-label="備品で絞り込み"><option value="">すべての備品</option>${state.equipment.map((e) => `<option value="${esc(e.id)}" ${filterEquipment === e.id ? "selected" : ""}>${esc(e.name)}</option>`).join("")}</select>` : ""}${p === "suppliers" ? `<select id="supplier-category-filter" aria-label="業者区分で絞り込み"><option value="">すべての業者区分</option>${options("supplierCategory").map(([v, t]) => `<option value="${esc(v)}" ${filterSupplierCategory === v ? "selected" : ""}>${esc(t)}</option>`).join("")}</select>` : ""}${statuses.length ? `<select id="status-filter" aria-label="状態で絞り込み"><option value="">すべての状態</option>${statuses.map((s) => `<option value="${s}" ${filterStatus === s ? "selected" : ""}>${labels[s] || s}</option>`).join("")}</select>` : ""}<select id="sort" aria-label="並び順">${cols
         .filter((c) => !c[0].startsWith("_"))
         .map(
           (c) =>
@@ -587,6 +617,7 @@
       reservationStatus: ["approved", "cancelled"],
       loanStatus: ["reserved", "active", "returned"],
       orderStatus: ["ordered", "received", "notArrived", "damaged"],
+      supplierCategory: ["発注先", "印刷会社", "レンタル業者", "その他"],
       expenseStatus: ["submitted", "approved", "rejected"],
       taskStatus: ["todo", "active", "done"],
       lostItemStatus: ["stored", "claimed", "disposed"],
@@ -609,7 +640,16 @@
         if (type === "textarea")
           input = `<textarea name="${k}">${esc(value)}</textarea>`;
         else if (
-          ["text", "number", "date", "time", "datetime-local"].includes(type)
+          [
+            "text",
+            "number",
+            "date",
+            "time",
+            "datetime-local",
+            "tel",
+            "email",
+            "url",
+          ].includes(type)
         )
           input = `<input name="${k}" type="${type}" ${type === "number" ? 'step="any"' : ""} value="${esc(value)}" ${["title", "name"].includes(k) ? "required" : ""}>`;
         else
@@ -707,6 +747,11 @@
       if ($("#equipment-filter"))
         $("#equipment-filter").onchange = (e) => {
           filterEquipment = e.target.value;
+          render();
+        };
+      if ($("#supplier-category-filter"))
+        $("#supplier-category-filter").onchange = (e) => {
+          filterSupplierCategory = e.target.value;
           render();
         };
       if ($("#filter-overdue"))
@@ -944,6 +989,7 @@
     filterText = "";
     filterStatus = "";
     filterEquipment = "";
+    filterSupplierCategory = "";
     filterOverdue = false;
     sortKey = "id";
     render();
