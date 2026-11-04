@@ -58,6 +58,21 @@
         return "金額は数値で入力してください";
       return "";
     },
+    isHighValueExpense(amount) {
+      return Number(amount) >= 30000;
+    },
+    canExpenseStatusTransition(amount, previousStatus, nextStatus) {
+      const value = Number(amount);
+      if (!Number.isFinite(value)) return false;
+      if (value < 30000) return true;
+      if (nextStatus === "approved")
+        return previousStatus === "reviewed" || previousStatus === "approved";
+      if (nextStatus === "reviewed")
+        return previousStatus === "submitted" || previousStatus === "reviewed" || !previousStatus;
+      if (nextStatus === "submitted") return true;
+      if (nextStatus === "rejected") return previousStatus !== "approved";
+      return true;
+    },
     validateTime(r) {
       return r.start > r.end ? "終了時刻を開始時刻より後にしてください" : "";
     },

@@ -35,7 +35,8 @@
   const labels = {
     draft: "下書き",
     submitted: "承認待ち",
-    approved: "承認済み",
+    reviewed: "担当確認済み",
+    approved: "責任者確認済み",
     rejected: "差し戻し",
     cancelled: "取消",
     active: "対応中",
@@ -413,7 +414,7 @@
       ],
       reservationStatus: ["approved", "cancelled"],
       loanStatus: ["reserved", "active", "returned"],
-      expenseStatus: ["submitted", "approved", "rejected"],
+      expenseStatus: ["submitted", "reviewed", "approved", "rejected"],
       taskStatus: ["todo", "active", "done"],
       category: ["備品", "消耗品", "外注", "広報", "その他"],
     };
@@ -469,7 +470,22 @@
       )
     )
       return "必須項目を入力してください";
-    if (p === "expenses") return D.validateExpense(r);
+    if (p === "expenses") {
+      const previous = state.expenses.find((x) => x.id === r.id);
+      const err = D.validateExpense(r);
+      if (err) return err;
+      if (
+        !D.canExpenseStatusTransition(
+          r.amount,
+          previous ? previous.status : "",
+          r.status,
+        )
+      )
+        return D.isHighValueExpense(r.amount)
+          ? "3万円以上の経費は、担当確認後に責任者確認してください"
+          : "";
+      return "";
+    }
     if (p === "groups" && D.duplicateGroup(state, r.name, r.id))
       return "同じ名前の団体が存在します";
     if (["applications", "reservations", "shifts"].includes(p)) {

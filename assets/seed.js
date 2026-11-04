@@ -235,7 +235,7 @@
         category: "外注",
         amount: 45000,
         date: "2026-10-23",
-        status: "approved",
+        status: "reviewed",
       },
       {
         id: "X04",
