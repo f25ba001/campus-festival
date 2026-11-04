@@ -108,8 +108,9 @@
     nextId(rows, prefix) {
       return prefix + String(rows.length + 1).padStart(2, "0");
     },
-    csv(rows, keys) {
-      return [keys.join(","), ...rows.map((r) => keys.map((k) => String(r[k] ?? "")).join(","))].join("\r\n");
+    csv(rows, keys, labels = {}) {
+      const headers = keys.map((key) => labels[key] || key);
+      return [headers.join(","), ...rows.map((r) => keys.map((key) => `"${String(r[key] ?? "").replaceAll('"', '""')}"`).join(","))].join("\r\n");
     },
     validateImport(data) {
       return typeof data === "object" && data !== null;

@@ -339,6 +339,17 @@
       { id: "C03", area: "中庭テント", manager: "石井 みな", managerContact: "090-9999-0000", alternate: "鈴木 いつき", alternateContact: "090-1212-3434", note: "屋外エリアと食品販売" }
     ],
     attendeeChanges: [],
+    sponsors: [
+      { id: "SP01", name: "青葉商事株式会社", contact: "営業企画部 / 田村", phone: "042-111-2233", email: "sponsor@aoba.example.jp", goods: "飲料500本", cash: 150000, note: "当日受付前に納品" },
+      { id: "SP02", name: "キャンパスフード協同組合", contact: "広報担当 / 小林", phone: "042-222-3344", email: "info@campusfood.example.jp", goods: "弁当100食", cash: 50000, note: "中庭テントへ配送" },
+      { id: "SP03", name: "未来テック研究所", contact: "地域連携 / 佐野", phone: "042-333-4455", email: "community@futuretech.example.jp", goods: "ノベルティ250個", cash: 200000, note: "展示ブース協賛" }
+    ],
+    entrances: [
+      { id: "EN01", name: "正門", count: 184, capacity: 300 },
+      { id: "EN02", name: "東門", count: 126, capacity: 200 },
+      { id: "EN03", name: "西門", count: 98, capacity: 180 },
+      { id: "EN04", name: "駅入口", count: 211, capacity: 250 }
+    ],
     notices: [
       {
         id: "N01",

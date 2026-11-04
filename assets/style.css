@@ -501,6 +501,52 @@ dialog::backdrop {
 .preview-list li {
   line-height: 1.6;
 }
+.entry-chart {
+  display: grid;
+  gap: 18px;
+}
+.entry-row {
+  display: grid;
+  grid-template-columns: minmax(150px, 220px) minmax(100px, 1fr) 48px;
+  align-items: center;
+  gap: 12px;
+}
+.entry-label {
+  display: grid;
+  gap: 4px;
+}
+.entry-label span {
+  color: var(--muted);
+  font-size: 12px;
+}
+.entry-bar {
+  height: 18px;
+  border-radius: 4px;
+  background: var(--line);
+  overflow: hidden;
+}
+.entry-bar span {
+  display: block;
+  height: 100%;
+  border-radius: 4px;
+}
+.entry-bar .low {
+  background: #74a96b;
+}
+.entry-bar .medium {
+  background: #d29a36;
+}
+.entry-bar .high {
+  background: #c95f45;
+}
+@media (max-width: 700px) {
+  .entry-row {
+    grid-template-columns: 1fr 48px;
+  }
+  .entry-label {
+    grid-column: 1 / -1;
+  }
+}
 #toast {
   position: fixed;
   bottom: 24px;
