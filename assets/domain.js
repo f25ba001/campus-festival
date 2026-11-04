@@ -107,7 +107,10 @@
       });
     },
     nextId(rows, prefix) {
-      return prefix + String(rows.length + 1).padStart(2, "0");
+      const ids = new Set(rows.map((row) => row.id));
+      let number = 1;
+      while (ids.has(prefix + String(number).padStart(2, "0"))) number++;
+      return prefix + String(number).padStart(2, "0");
     },
     csv(rows, keys) {
       return [

@@ -192,16 +192,22 @@
       throw error;
     }
   }
-  function save(message) {
-    state.activity.unshift({ at: new Date().toISOString(), message });
-    state.activity = state.activity.slice(0, 100);
+  function save(message, data = state) {
+    const nextState = structuredClone(data);
+    nextState.activity.unshift({
+      at: new Date().toISOString(),
+      message,
+    });
+    nextState.activity = nextState.activity.slice(0, 100);
     try {
-      localStorage.setItem(KEY, JSON.stringify(state));
+      localStorage.setItem(KEY, JSON.stringify(nextState));
     } catch (e) {
       toast("保存できませんでした。データ管理からバックアップしてください。");
-      return;
+      return false;
     }
+    state = nextState;
     if (message) toast(message);
+    return true;
   }
   function download(filename, text, type = "application/json") {
     const blob = new Blob(["\ufeff", text], { type: type + ";charset=utf-8" }),
@@ -770,9 +776,11 @@
           return;
         }
         if (p === "expenses") r.amount = D.roundedAmount(r.amount);
-        if (id) state[p][state[p].findIndex((x) => x.id === id)] = r;
-        else state[p].push(r);
-        save(pages[p][1] + "を保存しました");
+        const nextState = structuredClone(state);
+        if (id)
+          nextState[p][nextState[p].findIndex((x) => x.id === id)] = r;
+        else nextState[p].push(r);
+        if (!save(pages[p][1] + "を保存しました", nextState)) return;
         $("#editor").close();
         render();
       },
