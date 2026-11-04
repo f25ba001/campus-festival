@@ -329,6 +329,16 @@
       { id: "TKT03", code: "A03-0001", applicationId: "A03", status: "active", used: true, usedAt: "2026-11-14T10:00:00.000Z" },
       { id: "TKT04", code: "A07-0001", applicationId: "A07", status: "invalid", used: false, usedAt: null }
     ],
+    troubles: [
+      { id: "TR01", title: "マイクから音が出ない", location: "ステージ", owner: "田中 つむぎ", status: "pending", reportedAt: "2026-11-14 09:20", completionCondition: "音響担当者による入力確認と2回目の再生確認が完了", note: "予備マイクを準備" },
+      { id: "TR02", title: "受付案内表示の位置変更", location: "総合受付", owner: "佐藤 ひなた", status: "waiting", reportedAt: "2026-11-14 09:35", completionCondition: "変更後の案内板で来場者が迷わないことを責任者が確認", note: "運営本部へ連絡済み" }
+    ],
+    contacts: [
+      { id: "C01", area: "総合受付", manager: "佐藤 ひなた", managerContact: "090-1111-2222", alternate: "青木 はる", alternateContact: "090-3333-4444", note: "受付トラブル全般" },
+      { id: "C02", area: "ステージ", manager: "田中 つむぎ", managerContact: "090-5555-6666", alternate: "上田 そう", alternateContact: "090-7777-8888", note: "音響・進行トラブル" },
+      { id: "C03", area: "中庭テント", manager: "石井 みな", managerContact: "090-9999-0000", alternate: "鈴木 いつき", alternateContact: "090-1212-3434", note: "屋外エリアと食品販売" }
+    ],
+    attendeeChanges: [],
     notices: [
       {
         id: "N01",

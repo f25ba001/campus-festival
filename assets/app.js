@@ -28,6 +28,9 @@
     if (!Array.isArray(state.groups) || !Array.isArray(state.applications))
       throw Error("形式");
     if (!Array.isArray(state.tickets)) state.tickets = [];
+    if (!Array.isArray(state.troubles) || state.troubles.length === 0) state.troubles = structuredClone(FestivalSeed.troubles);
+    if (!Array.isArray(state.contacts) || state.contacts.length === 0) state.contacts = structuredClone(FestivalSeed.contacts);
+    if (!Array.isArray(state.attendeeChanges)) state.attendeeChanges = [];
     state.applications
       .filter((application) => application.status === "cancelled")
       .forEach((application) => D.invalidateTickets(state, application.id));
@@ -43,6 +46,9 @@
     rejected: "差し戻し",
     cancelled: "取消",
     active: "対応中",
+    pending: "未対応",
+    waiting: "完了待ち",
+    completed: "完了",
     reserved: "予約",
     returned: "返却済み",
     active: "有効",
@@ -60,6 +66,8 @@
     expenses: ["¥", "予算・経費", "FINANCE"],
     shifts: ["◷", "スタッフ配置", "STAFF"],
     tasks: ["☑", "タスク", "TASKS"],
+    troubles: ["!", "トラブル対応", "INCIDENTS"],
+    contacts: ["☎", "緊急連絡先", "EMERGENCY CONTACTS"],
     notices: ["◉", "お知らせ", "NOTICES"],
     settings: ["⚙", "データ管理", "SETTINGS"],
   };
@@ -123,6 +131,23 @@
       ["status", "状態", "taskStatus"],
       ["note", "補足", "textarea"],
     ],
+    troubles: [
+      ["title", "トラブル内容", "text"],
+      ["location", "場所・エリア", "text"],
+      ["owner", "担当者", "text"],
+      ["reportedAt", "報告日時", "text"],
+      ["status", "進捗ステータス", "troubleStatus"],
+      ["completionCondition", "完了条件", "textarea"],
+      ["note", "対応メモ", "textarea"]
+    ],
+    contacts: [
+      ["area", "場所・担当エリア", "text"],
+      ["manager", "当日責任者", "text"],
+      ["managerContact", "責任者連絡先", "text"],
+      ["alternate", "代理責任者", "text"],
+      ["alternateContact", "代理連絡先", "text"],
+      ["note", "備考", "textarea"]
+    ],
     notices: [
       ["title", "件名", "text"],
       ["groupId", "対象団体", "audience"],
@@ -138,6 +163,8 @@
     expenses: "X",
     shifts: "S",
     tasks: "T",
+    troubles: "TR",
+    contacts: "C",
     notices: "N",
   };
   function page() {
@@ -305,6 +332,24 @@
           ["due", "期限"],
           ["status", "状態"],
         ];
+      case "troubles":
+        return [
+          ["id", "ID"],
+          ["title", "トラブル"],
+          ["location", "場所・エリア"],
+          ["owner", "担当者"],
+          ["status", "進捗"],
+          ["completionCondition", "完了条件"]
+        ];
+      case "contacts":
+        return [
+          ["id", "ID"],
+          ["area", "場所・担当エリア"],
+          ["manager", "責任者"],
+          ["managerContact", "責任者連絡先"],
+          ["alternate", "代理"],
+          ["alternateContact", "代理連絡先"]
+        ];
       case "notices":
         return [
           ["id", "ID"],
@@ -348,6 +393,14 @@
       summary = `<div class="stats">${state.venues.map((v) => stat(esc(v.name), v.capacity + "<small> 名</small>", "予約 " + D.venueUsage(state, v.id) + " 件")).join("")}</div>`;
     if (p === "expenses")
       summary = `<div class="stats">${stat("登録経費合計", money(D.expenses(state)), "全団体の経費")}${stat("総予算", money(state.groups.reduce((n, g) => n + Number(g.budget), 0)), "団体ごとの予算を合算")}</div>`;
+    if (p === "contacts")
+      summary = `<div class="help">緊急時は責任者へ連絡し、応答がない場合は代理連絡先へ連絡してください。</div>`;
+    if (p === "applications" || p === "reservations") {
+      const changes = state.attendeeChanges.filter((change) => change.entity === p.slice(0, -1).replace("application", "applications").replace("reservation", "reservations") || change.entity === p);
+      if (changes.length) {
+        summary += `<div class="panel"><div class="panel-title"><h2>来場人数変更履歴</h2></div><div class="table-scroll"><table><thead><tr><th>対象</th><th>修正前</th><th>修正後</th><th>理由</th><th>修正者</th><th>日時</th></tr></thead><tbody>${changes.map((change) => `<tr><td>${esc(change.entityId)}</td><td>${esc(change.before)}</td><td>${esc(change.after)}</td><td>${esc(change.reason)}</td><td>${esc(change.editor)}</td><td>${esc(change.at)}</td></tr>`).join("")}</tbody></table></div></div>`;
+      }
+    }
     const exportButton =
       '<button class="secondary" id="export-csv">CSV出力</button>';
     return (
@@ -433,6 +486,7 @@
       expenseStatus: ["submitted", "approved", "rejected"],
       taskStatus: ["todo", "active", "done"],
       category: ["備品", "消耗品", "外注", "広報", "その他"],
+      troubleStatus: ["pending", "active", "waiting", "completed"],
     };
     return (map[type] || []).map((s) => [s, labels[s] || s]);
   }
@@ -462,6 +516,9 @@
         return `<div class="field"><label for="field-${k}">${label}</label>${input.replace('name="' + k + '"', 'id="field-' + k + '" name="' + k + '"')}</div>`;
       })
       .join("");
+    if ((p === "applications" || p === "reservations") && original) {
+      $("#form-fields").insertAdjacentHTML("beforeend", '<div class="field"><label for="field-attendeeChangeReason">来場人数変更理由</label><textarea id="field-attendeeChangeReason" name="attendeeChangeReason"></textarea></div><div class="field"><label for="field-attendeeChangeEditor">修正者</label><input id="field-attendeeChangeEditor" name="attendeeChangeEditor" value="実行委員"></div>');
+    }
     $("#editor").showModal();
   }
   function validate(p, r) {
@@ -487,6 +544,10 @@
     )
       return "必須項目を入力してください";
     if (p === "expenses") return D.validateExpense(r);
+    if (p === "troubles") {
+      const err = D.validateTrouble(r);
+      if (err) return err;
+    }
     if (p === "groups" && D.duplicateGroup(state, r.name, r.id))
       return "同じ名前の団体が存在します";
     if (["applications", "reservations", "shifts"].includes(p)) {
@@ -650,7 +711,17 @@
         }
       };
       $("#reset").onclick = () => {
-        if (!confirm("編集内容を破棄し、初期データへ戻しますか？")) return;
+        const previewLabels = { groups: "団体", venues: "会場", applications: "企画・申請", reservations: "予約", equipment: "備品", loans: "貸出", expenses: "経費", shifts: "スタッフ配置", tasks: "タスク", troubles: "トラブル", contacts: "緊急連絡先", tickets: "整理券", attendeeChanges: "来場人数変更履歴", notices: "お知らせ" };
+        const preview = Object.entries(state)
+          .filter(([key, value]) => key !== "activity" && Array.isArray(value))
+          .map(([key, value]) => `<li>${esc(previewLabels[key] || key)}: <b>${value.length}件</b></li>`)
+          .join("");
+        $("#reset-preview-list").innerHTML = preview;
+        $("#reset-dialog").showModal();
+      };
+      $("#reset-cancel").onclick = () => $("#reset-dialog").close();
+      $("#reset-confirm").onclick = () => {
+        $("#reset-dialog").close();
         state = structuredClone(FestivalSeed);
         storageWarning = "";
         save("初期データへ戻しました");
@@ -684,6 +755,25 @@
       return;
     }
     if (p === "expenses") r.amount = D.roundedAmount(r.amount);
+    if ((p === "applications" || p === "reservations") && id && editing.original) {
+      const previous = Number(editing.original.attendees);
+      const next = Number(r.attendees);
+      if (previous !== next) {
+        const reason = String(r.attendeeChangeReason ?? "").trim();
+        const editor = String(r.attendeeChangeEditor ?? "").trim();
+        if (!reason) {
+          toast("来場人数を変更した場合は修正理由を入力してください");
+          return;
+        }
+        if (!editor) {
+          toast("修正者を入力してください");
+          return;
+        }
+        state.attendeeChanges.push({ id: D.nextId(state.attendeeChanges, "AC"), entity: p, entityId: id, before: previous, after: next, reason, editor, at: new Date().toISOString() });
+      }
+      delete r.attendeeChangeReason;
+      delete r.attendeeChangeEditor;
+    }
     if (id) state[p][state[p].findIndex((x) => x.id === id)] = r;
     else state[p].push(r);
     if (p === "applications" && r.status === "cancelled") {

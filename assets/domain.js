@@ -36,6 +36,13 @@
       e.stock += Number(l.quantity);
       l.status = "returned";
     },
+    validateTrouble(r) {
+      if (["waiting", "completed"].includes(r.status) && !String(r.completionCondition ?? "").trim())
+        return "完了待ち・完了には完了条件を入力してください";
+      if (r.status === "completed" && !String(r.completionCondition ?? "").trim())
+        return "完了条件を入力してください";
+      return "";
+    },
     validateExpense(r) {
       return Number.isFinite(Number(r.amount)) ? "" : "金額は数値で入力してください";
     },
