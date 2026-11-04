@@ -27,6 +27,10 @@
     state = saved ? JSON.parse(saved) : structuredClone(FestivalSeed);
     if (!Array.isArray(state.groups) || !Array.isArray(state.applications))
       throw Error("形式");
+    if (!Array.isArray(state.tickets)) state.tickets = [];
+    state.applications
+      .filter((application) => application.status === "cancelled")
+      .forEach((application) => D.invalidateTickets(state, application.id));
   } catch (e) {
     state = structuredClone(FestivalSeed);
     storageWarning =
@@ -41,6 +45,8 @@
     active: "対応中",
     reserved: "予約",
     returned: "返却済み",
+    active: "有効",
+    invalid: "無効",
     todo: "未着手",
     done: "完了",
   };
@@ -49,6 +55,7 @@
     groups: ["◎", "団体・メンバー", "ORGANIZATIONS"],
     applications: ["▤", "出店申請", "APPLICATIONS"],
     reservations: ["▦", "会場予約", "VENUES"],
+    reception: ["✓", "整理券受付", "RECEPTION"],
     loans: ["▣", "備品・貸出", "EQUIPMENT"],
     expenses: ["¥", "予算・経費", "FINANCE"],
     shifts: ["◷", "スタッフ配置", "STAFF"],
@@ -143,7 +150,8 @@
     return "¥" + Number(n).toLocaleString("ja-JP");
   }
   function name(collection, id) {
-    return state[collection].find((r) => r.id === id)?.name || "未設定";
+    const row = state[collection].find((r) => r.id === id);
+    return row?.name || row?.title || "未設定";
   }
   function badge(v) {
     return `<span class="badge ${esc(v)}">${esc(labels[v] || v)}</span>`;
@@ -361,6 +369,13 @@
       `<div class="panel"><div class="table-scroll"><table><thead><tr>${cols.map((c) => `<th>${c[1]}</th>`).join("")}<th>操作</th></tr></thead><tbody>${rows.length ? rows.map((r) => `<tr>${cols.map((c) => `<td class="${["title", "body", "name"].includes(c[0]) ? "description" : ""}">${cell(r, c[0])}</td>`).join("")}<td><div class="actions"><button class="secondary small" data-edit="${esc(r.id)}">編集</button>${p === "applications" ? `<button class="small" data-approve="${esc(r.id)}">承認</button><button class="danger small" data-cancel="${esc(r.id)}">取消</button>` : ""}${p === "loans" ? `<button class="small" data-return="${esc(r.id)}">返却</button>` : ""}${p === "tasks" ? `<button class="small" data-done="${esc(r.id)}">完了</button>` : ""}<button class="danger small" data-delete="${esc(r.id)}">削除</button></div></td></tr>`).join("") : `<tr><td colspan="${cols.length + 1}" class="empty">該当するデータはありません。</td></tr>`}</tbody></table></div></div>`
     );
   }
+  function renderReception() {
+    return (
+      head("整理券受付", "コード照合と二重使用チェックを行います。") +
+      `<div class="panel"><div class="panel-title"><h2>整理券照合</h2></div><div class="panel-body"><form id="ticket-form"><div class="field"><label for="ticket-code">整理券コード</label><input id="ticket-code" name="code" autocomplete="off" placeholder="例: A01-0001" required></div><button type="submit">照合する</button></form><div id="ticket-result" class="ticket-result" role="alert" aria-live="assertive"></div></div></div>` +
+      `<div class="panel"><div class="panel-title"><h2>受付済み整理券</h2></div><div class="table-scroll"><table><thead><tr><th>コード</th><th>企画</th><th>状態</th><th>使用日時</th></tr></thead><tbody>${state.tickets.map((ticket) => `<tr><td class="mono">${esc(ticket.code)}</td><td>${esc(name("applications", ticket.applicationId))}</td><td>${badge(ticket.status)}</td><td>${ticket.usedAt ? esc(new Date(ticket.usedAt).toLocaleString("ja-JP")) : "—"}</td></tr>`).join("") || '<tr><td colspan="4" class="empty">整理券はありません。</td></tr>'}</tbody></table></div></div>`
+    );
+  }
   function renderSettings() {
     return (
       head("データを、手元に。", "保存・復元と、操作する団体を管理します。") +
@@ -385,9 +400,11 @@
       (storageWarning ? `<div class="help">${esc(storageWarning)}</div>` : "") +
       (p === "dashboard"
         ? renderDashboard()
-        : p === "settings"
-          ? renderSettings()
-          : renderList(p));
+        : p === "reception"
+          ? renderReception()
+          : p === "settings"
+            ? renderSettings()
+            : renderList(p));
     bind(p);
   }
   function options(type) {
@@ -502,6 +519,22 @@
     return "";
   }
   function bind(p) {
+    if (p === "reception") {
+      $("#ticket-form").onsubmit = (event) => {
+        event.preventDefault();
+        const code = new FormData(event.target).get("code");
+        const result = D.useTicket(state, code);
+        const box = $("#ticket-result");
+        if (!result.ok) {
+          box.className = "ticket-result error";
+          box.textContent = "エラー：" + result.error;
+          return;
+        }
+        box.className = "ticket-result success";
+        box.textContent = "照合成功：入場を記録しました（" + result.ticket.code + "）";
+        save("整理券を受付で使用しました：" + result.ticket.code);
+      };
+    }
     if (fields[p]) {
       $("#add-row").onclick = () => openEditor(p);
       $("#search").oninput = (e) => {
@@ -570,8 +603,8 @@
         (b) =>
           (b.onclick = () => {
             if (!confirm("出店を取り消しますか？")) return;
-            D.cancelApplication(state, b.dataset.cancel);
-            save("出店を取り消しました");
+            const invalidated = D.cancelApplication(state, b.dataset.cancel);
+            save("出店を取り消しました" + (invalidated ? "（整理券" + invalidated + "件を無効化）" : ""));
             render();
           }),
       );
@@ -653,6 +686,10 @@
     if (p === "expenses") r.amount = D.roundedAmount(r.amount);
     if (id) state[p][state[p].findIndex((x) => x.id === id)] = r;
     else state[p].push(r);
+    if (p === "applications" && r.status === "cancelled") {
+      const invalidated = D.invalidateTickets(state, r.id);
+      if (invalidated > 0) toast(invalidated + "件の整理券を無効化しました");
+    }
     save(pages[p][1] + "を保存しました");
     $("#editor").close();
     render();

@@ -1,21 +1,14 @@
 (function (root) {
   "use strict";
-  // 業務ルールを画面から分離しています。変更時は呼び出し元も確認してください。
   const D = {
     search(rows, q) {
-      return rows.filter((r) =>
-        JSON.stringify(r).toLowerCase().includes(q.toLowerCase()),
-      );
+      return rows.filter((r) => JSON.stringify(r).toLowerCase().includes(q.toLowerCase()));
     },
     sort(rows, key) {
-      return [...rows].sort((a, b) =>
-        String(a[key]).localeCompare(String(b[key]), "ja"),
-      );
+      return [...rows].sort((a, b) => String(a[key]).localeCompare(String(b[key]), "ja"));
     },
     pending(s) {
-      return s.applications.filter(
-        (a) => a.status === "submitted" || a.status === "draft",
-      ).length;
+      return s.applications.filter((a) => a.status === "submitted" || a.status === "draft").length;
     },
     expenses(s, groupId) {
       return s.expenses
@@ -27,24 +20,14 @@
       return (g?.budget || 50000) - D.expenses(s);
     },
     venueConflict(s, r) {
-      return s.reservations.some(
-        (x) =>
-          x.id !== r.id &&
-          x.status !== "cancelled" &&
-          x.venueId === r.venueId &&
-          x.date === r.date &&
-          ((r.start >= x.start && r.start <= x.end) ||
-            (r.end >= x.start && r.end <= x.end)),
+      return s.reservations.some((x) =>
+        x.id !== r.id && x.status !== "cancelled" && x.venueId === r.venueId && x.date === r.date &&
+        ((r.start >= x.start && r.start < x.end) || (r.end > x.start && r.end <= x.end))
       );
     },
     available(s, id) {
       const e = s.equipment.find((e) => e.id === id);
-      return e
-        ? e.stock -
-            s.loans
-              .filter((l) => l.equipmentId === id && l.status !== "reserved")
-              .reduce((n, l) => n + Number(l.quantity), 0)
-        : 0;
+      return e ? e.stock - s.loans.filter((l) => l.equipmentId === id && l.status !== "reserved").reduce((n, l) => n + Number(l.quantity), 0) : 0;
     },
     returnLoan(s, id) {
       const l = s.loans.find((x) => x.id === id);
@@ -54,30 +37,19 @@
       l.status = "returned";
     },
     validateExpense(r) {
-      if (!Number.isFinite(Number(r.amount)))
-        return "金額は数値で入力してください";
-      return "";
+      return Number.isFinite(Number(r.amount)) ? "" : "金額は数値で入力してください";
     },
     validateTime(r) {
-      return r.start > r.end ? "終了時刻を開始時刻より後にしてください" : "";
+      return r.start >= r.end ? "開始時刻は終了時刻より前にしてください" : "";
     },
     shiftConflict(s, r) {
-      return s.shifts.some(
-        (x) =>
-          x.id !== r.id &&
-          x.name === r.name &&
-          x.date === r.date &&
-          x.start === r.start,
-      );
+      return s.shifts.some((x) => x.id !== r.id && x.name === r.name && x.date === r.date && x.start === r.start);
     },
     overdue(r, today) {
       return Number(r.due.slice(-2)) < Number(today.slice(-2));
     },
     completion(s) {
-      return Math.round(
-        (s.tasks.filter((t) => t.status === "done").length / s.tasks.length) *
-          100,
-      );
+      return s.tasks.length ? Math.round((s.tasks.filter((t) => t.status === "done").length / s.tasks.length) * 100) : 0;
     },
     notices(s, groupId) {
       return s.notices;
@@ -85,9 +57,42 @@
     canApprove(role) {
       return role !== "leader";
     },
+    invalidateTickets(s, applicationId) {
+      if (!Array.isArray(s.tickets)) return 0;
+      let count = 0;
+      s.tickets.forEach((ticket) => {
+        if (ticket.applicationId === applicationId && ticket.status !== "invalid") {
+          ticket.status = "invalid";
+          count++;
+        }
+      });
+      return count;
+    },
     cancelApplication(s, id) {
       const a = s.applications.find((a) => a.id === id);
-      if (a) a.status = "cancelled";
+      if (a) {
+        a.status = "cancelled";
+        return D.invalidateTickets(s, id);
+      }
+      return 0;
+    },
+    checkTicket(s, code) {
+      const normalized = String(code ?? "").trim().toUpperCase();
+      if (!normalized) return { ok: false, error: "整理券コードを入力してください" };
+      const ticket = Array.isArray(s.tickets)
+        ? s.tickets.find((item) => String(item.code).trim().toUpperCase() === normalized)
+        : null;
+      if (!ticket) return { ok: false, error: "整理券が見つかりません" };
+      if (ticket.status === "invalid") return { ok: false, error: "この整理券は無効です" };
+      if (ticket.used) return { ok: false, error: "二重使用エラー：この整理券は使用済みです" };
+      return { ok: true, ticket };
+    },
+    useTicket(s, code) {
+      const result = D.checkTicket(s, code);
+      if (!result.ok) return result;
+      result.ticket.used = true;
+      result.ticket.usedAt = new Date().toISOString();
+      return result;
     },
     deleteGroup(s, id) {
       s.groups = s.groups.filter((g) => g.id !== id);
@@ -97,10 +102,7 @@
       return prefix + String(rows.length + 1).padStart(2, "0");
     },
     csv(rows, keys) {
-      return [
-        keys.join(","),
-        ...rows.map((r) => keys.map((k) => String(r[k] ?? "")).join(",")),
-      ].join("\r\n");
+      return [keys.join(","), ...rows.map((r) => keys.map((k) => String(r[k] ?? "")).join(","))].join("\r\n");
     },
     validateImport(data) {
       return typeof data === "object" && data !== null;
@@ -136,9 +138,7 @@
       return l.due < today;
     },
     venueUsage(s, id) {
-      return s.reservations.filter(
-        (r) => r.venueId === id && r.status !== "cancelled",
-      ).length;
+      return s.reservations.filter((r) => r.venueId === id && r.status !== "cancelled").length;
     },
     groupMembers(s) {
       return s.groups.reduce((n, g) => n + Number(g.members), 0);
@@ -164,7 +164,7 @@
     },
     validateRequired(r, fields) {
       return fields.every((k) => String(r[k] ?? "").trim().length > 0);
-    },
+    }
   };
   root.FestivalDomain = D;
   if (typeof module !== "undefined") module.exports = D;

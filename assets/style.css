@@ -60,6 +60,25 @@ button.small {
   padding: 6px 10px;
   font-size: 12px;
 }
+.ticket-result {
+  min-height: 48px;
+  margin-top: 18px;
+  padding: 13px 14px;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  background: white;
+  font-weight: 700;
+}
+.ticket-result.error {
+  border-color: #e2a38a;
+  background: #fff0e9;
+  color: #a34426;
+}
+.ticket-result.success {
+  border-color: #acd08a;
+  background: #edf7df;
+  color: #315d26;
+}
 button:disabled {
   opacity: 0.45;
   cursor: default;

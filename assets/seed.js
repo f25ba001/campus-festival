@@ -323,6 +323,12 @@
         note: "確認済み",
       },
     ],
+    tickets: [
+      { id: "TKT01", code: "A01-0001", applicationId: "A01", status: "active", used: false, usedAt: null },
+      { id: "TKT02", code: "A01-0002", applicationId: "A01", status: "active", used: false, usedAt: null },
+      { id: "TKT03", code: "A03-0001", applicationId: "A03", status: "active", used: true, usedAt: "2026-11-14T10:00:00.000Z" },
+      { id: "TKT04", code: "A07-0001", applicationId: "A07", status: "invalid", used: false, usedAt: null }
+    ],
     notices: [
       {
         id: "N01",
