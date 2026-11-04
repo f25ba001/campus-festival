@@ -1,7 +1,8 @@
 (function () {
   "use strict";
   const D = FestivalDomain,
-    KEY = "campus-festival-v1";
+    KEY = "campus-festival-v1",
+    COLUMN_PREFERENCES_KEY = "campus-festival-column-preferences-v1";
   const $ = (s) => document.querySelector(s),
     esc = (s) =>
       String(s ?? "").replace(
@@ -19,8 +20,14 @@
     storageWarning = "",
     filterText = "",
     filterStatus = "",
+    filterEquipment = "",
+    filterSupplierCategory = "",
+    filterOverdue = false,
+    columnPreferences = {},
+    columnPreferenceWarning = "",
     sortKey = "id",
     editing = null,
+    actionInProgress = false,
     toastTimer;
   try {
     const saved = localStorage.getItem(KEY);
@@ -59,6 +66,13 @@
     invalid: "無効",
     todo: "未着手",
     done: "完了",
+    stored: "保管中",
+    claimed: "返却済み",
+    disposed: "処分済み",
+    ordered: "未受領",
+    received: "受領済",
+    notArrived: "未着",
+    damaged: "破損・初期不良",
   };
   const pages = {
     dashboard: ["◈", "ダッシュボード", "OVERVIEW"],
@@ -67,6 +81,8 @@
     reservations: ["▦", "会場予約", "VENUES"],
     reception: ["✓", "整理券受付", "RECEPTION"],
     loans: ["▣", "備品・貸出", "EQUIPMENT"],
+    orders: ["▤", "発注品", "ORDERS"],
+    suppliers: ["☎", "業者連絡先", "SUPPLIERS"],
     expenses: ["¥", "予算・経費", "FINANCE"],
     shifts: ["◷", "スタッフ配置", "STAFF"],
     tasks: ["☑", "タスク", "TASKS"],
@@ -75,6 +91,7 @@
     sponsors: ["◆", "協賛団体", "SPONSORS"],
     entranceDashboard: ["▥", "入口別来場者", "ENTRY TRAFFIC"],
     notices: ["◉", "お知らせ", "NOTICES"],
+    lostItems: ["⌕", "落とし物", "LOST & FOUND"],
     settings: ["⚙", "データ管理", "SETTINGS"],
   };
   const fields = {
@@ -113,6 +130,23 @@
       ["quantity", "数量", "number"],
       ["due", "返却期限", "date"],
       ["status", "状態", "loanStatus"],
+    ],
+    orders: [
+      ["title", "発注品", "text"],
+      ["orderDate", "発注日", "date"],
+      ["status", "受領ステータス", "orderStatus"],
+      ["receivedAt", "受領日時", "datetime-local"],
+      ["receivedBy", "受領担当者名", "text"],
+    ],
+    suppliers: [
+      ["name", "業者名", "text"],
+      ["category", "業者区分", "supplierCategory"],
+      ["contactName", "担当者名", "text"],
+      ["phone", "電話番号", "tel"],
+      ["email", "メールアドレス", "email"],
+      ["website", "Webサイト", "url"],
+      ["address", "所在地", "text"],
+      ["note", "備考", "textarea"],
     ],
     expenses: [
       ["title", "経費名", "text"],
@@ -170,12 +204,22 @@
       ["date", "掲載日", "date"],
       ["body", "本文", "textarea"],
     ],
+    lostItems: [
+      ["title", "落とし物", "text"],
+      ["foundDate", "発見日", "date"],
+      ["location", "発見場所", "text"],
+      ["storageDeadline", "保管期限", "date"],
+      ["status", "状態", "lostItemStatus"],
+      ["note", "特徴・補足", "textarea"],
+    ],
   };
   const prefixes = {
     groups: "G",
     applications: "A",
     reservations: "R",
     loans: "L",
+    orders: "O",
+    suppliers: "P",
     expenses: "X",
     shifts: "S",
     tasks: "T",
@@ -183,6 +227,7 @@
     contacts: "C",
     sponsors: "SP",
     notices: "N",
+    lostItems: "F",
   };
   function page() {
     return location.hash.slice(1).split("?")[0] || "dashboard";
@@ -206,45 +251,111 @@
     clearTimeout(toastTimer);
     toastTimer = setTimeout(() => ($("#toast").style.display = "none"), 4000);
   }
-  const DRAFT_BACKUP_KEY = KEY + "-draft";
-  function persistState() {
-    const payload = JSON.stringify(state);
-    const warningLimit = 4 * 1024 * 1024;
-    if (payload.length > warningLimit && !confirm("保存領域がほぼいっぱいです。現在の変更を一時保存して続行しますか？")) {
-      toast("保存を中断しました。バックアップを取ってから再実行してください。");
-      return false;
+  try {
+    const savedPreferences = localStorage.getItem(COLUMN_PREFERENCES_KEY);
+    if (savedPreferences) {
+      const parsedPreferences = JSON.parse(savedPreferences);
+      if (
+        !parsedPreferences ||
+        typeof parsedPreferences !== "object" ||
+        Array.isArray(parsedPreferences)
+      )
+        throw Error("表示列設定の形式が不正です");
+      columnPreferences = parsedPreferences;
     }
+  } catch (error) {
+    console.error("表示列設定を読み込めませんでした。", error);
+    columnPreferenceWarning =
+      "表示列設定を読み込めなかったため、すべての列を表示しています。";
+  }
+  function visibleColumns(p, allColumns) {
+    const selected = columnPreferences[state.role]?.[p];
+    if (!Array.isArray(selected)) return allColumns;
+    const selectedKeys = new Set(
+      selected.filter((key) => allColumns.some((col) => col[0] === key)),
+    );
+    return selectedKeys.size
+      ? allColumns.filter((col) => selectedKeys.has(col[0]))
+      : allColumns;
+  }
+  function columnPicker(allColumns, visible) {
+    const selectedKeys = new Set(visible.map((col) => col[0]));
+    return `<details id="column-picker" class="panel column-picker"><summary>表示列を選択</summary><div class="column-options">${allColumns
+      .map(
+        ([key, label]) =>
+          `<label><input type="checkbox" data-column-visibility="${esc(key)}" ${selectedKeys.has(key) ? "checked" : ""}>${esc(label)}</label>`,
+      )
+      .join("")}</div><p class="subtitle">設定は操作する役割ごとに、このブラウザーへ保存されます。</p></details>`;
+  }
+  function setVisibleColumns(p, selectedKeys) {
+    const nextPreferences = structuredClone(columnPreferences);
+    nextPreferences[state.role] ||= {};
+    nextPreferences[state.role][p] = selectedKeys;
     try {
-      localStorage.setItem(KEY, payload);
-      sessionStorage.removeItem(DRAFT_BACKUP_KEY);
-      return true;
-    } catch (e) {
-      try {
-        sessionStorage.setItem(DRAFT_BACKUP_KEY, payload);
-      } catch (storageError) {
-        /* ignore */
-      }
-      alert("保存容量に達しました。現在の変更は一時保存されました。バックアップファイルを保存してから再度試してください。");
+      localStorage.setItem(
+        COLUMN_PREFERENCES_KEY,
+        JSON.stringify(nextPreferences),
+      );
+    } catch (error) {
+      console.error("表示列設定を保存できませんでした。", error);
+      toast("表示列設定を保存できませんでした。ブラウザーの保存容量を確認してください。");
       return false;
     }
+    columnPreferences = nextPreferences;
+    return true;
   }
-  function resetToSeedState() {
-    state = normalizeState(structuredClone(FestivalSeed));
-    storageWarning = "";
-    filterText = "";
-    filterStatus = "";
-    sortKey = "id";
-    editing = null;
-    localStorage.removeItem(KEY);
-    sessionStorage.removeItem(DRAFT_BACKUP_KEY);
-    localStorage.setItem(KEY, JSON.stringify(state));
+  function lockButtons() {
+    document.querySelectorAll("button:not(:disabled)").forEach((button) => {
+      button.disabled = true;
+      button.dataset.actionLock = "true";
+    });
   }
-  function save(message) {
-    state.activity.unshift({ at: new Date().toISOString(), message });
-    state.activity = state.activity.slice(0, 100);
-    if (message) logAudit(message, message, "system");
-    if (!persistState()) return;
+  function runAction(button, action, guardDuration = 400) {
+    if (actionInProgress || button?.disabled) return;
+    actionInProgress = true;
+    const started = Date.now();
+    let released = false;
+    const release = () => {
+      if (released) return;
+      released = true;
+      setTimeout(() => {
+        document
+          .querySelectorAll('button[data-action-lock="true"]')
+          .forEach((locked) => {
+            locked.disabled = false;
+            delete locked.dataset.actionLock;
+          });
+        actionInProgress = false;
+      }, Math.max(0, guardDuration - (Date.now() - started)));
+    };
+    lockButtons();
+    try {
+      const result = action();
+      if (result && typeof result.then === "function")
+        return result.finally(release);
+      release();
+      return result;
+    } catch (error) {
+      release();
+      throw error;
+    }
+  }
+  function save(message, data = state) {
+    const nextState = structuredClone(data);
+    nextState.activity.unshift({
+      at: new Date().toISOString(),
+      message,
+    });
+    nextState.activity = nextState.activity.slice(0, 100);
+    try {
+      localStorage.setItem(KEY, JSON.stringify(nextState));
+    } catch (e) {
+      toast("保存できませんでした。データ管理からバックアップしてください。");
+      return false;
+    }
+    state = nextState;
     if (message) toast(message);
+    return true;
   }
   function download(filename, text, type = "application/json") {
     const blob = new Blob(["\ufeff", text], { type: type + ";charset=utf-8" }),
@@ -343,11 +454,33 @@
         return [
           ["id", "ID"],
           ["equipmentId", "備品"],
-          ["groupId", "団体"],
+          ["_borrower", "利用団体・代表者"],
+          ["_purpose", "利用目的"],
           ["quantity", "数量"],
           ["due", "返却期限"],
           ["status", "状態"],
           ["_late", "期限確認"],
+        ];
+      case "orders":
+        return [
+          ["id", "ID"],
+          ["title", "発注品"],
+          ["orderDate", "発注日"],
+          ["status", "受領ステータス"],
+          ["receivedAt", "受領日時"],
+          ["receivedBy", "受領担当者名"],
+        ];
+      case "suppliers":
+        return [
+          ["id", "ID"],
+          ["name", "業者名"],
+          ["category", "業者区分"],
+          ["contactName", "担当者名"],
+          ["phone", "電話番号"],
+          ["email", "メールアドレス"],
+          ["website", "Webサイト"],
+          ["address", "所在地"],
+          ["note", "備考"],
         ];
       case "expenses":
         return [
@@ -413,6 +546,16 @@
           ["date", "掲載日"],
           ["body", "本文"],
         ];
+      case "lostItems":
+        return [
+          ["id", "ID"],
+          ["title", "落とし物"],
+          ["foundDate", "発見日"],
+          ["location", "発見場所"],
+          ["storageDeadline", "保管期限"],
+          ["status", "状態"],
+          ["_overdue", "期限確認"],
+        ];
     }
   }
   function cell(r, k) {
@@ -420,8 +563,22 @@
       return r[k] === "all" ? "全体" : esc(name("groups", r[k]));
     if (k === "venueId") return esc(name("venues", r[k]));
     if (k === "equipmentId") return esc(name("equipment", r[k]));
+    if (k === "_borrower") {
+      const group = state.groups.find((g) => g.id === r.groupId);
+      return group
+        ? `${esc(group.name)} / ${esc(group.representative || "代表者未登録")}`
+        : "未設定";
+    }
+    if (k === "_purpose") {
+      const application = state.applications.find(
+        (a) => a.id === r.applicationId,
+      );
+      return application ? esc(application.title) : "用途未登録";
+    }
     if (k === "status") return badge(r[k]);
-    if (k === "amount" || k === "budget" || k === "cash") return money(r[k]);
+    if (k === "category" && typeof r[k] === "string")
+      return esc(labels[r[k]] || r[k]);
+    if (k === "amount" || k === "budget") return money(r[k]);
     if (k === "_remaining") return money(D.remaining(state, r.id));
     if (k === "_time") return esc(r.start) + " – " + esc(r.end);
     if (k === "_hours") return D.shiftHours(r) + " h";
@@ -429,23 +586,88 @@
       return D.loanOverdue(r, today())
         ? '<span class="badge rejected">期限超過</span>'
         : "—";
+    if (k === "_overdue")
+      return D.lostItemOverdue(r, today())
+        ? '<span class="badge rejected">保管期限超過</span>'
+        : "—";
     return esc(r[k]);
   }
   function renderList(p) {
     let rows = p === "notices" ? D.notices(state, state.groupId) : state[p];
-    rows = D.search(rows, filterText);
+    if (p === "loans") {
+      const query = filterText.toLowerCase();
+      rows = rows.filter((loan) => {
+        const group = state.groups.find((g) => g.id === loan.groupId);
+        const application = state.applications.find(
+          (a) => a.id === loan.applicationId,
+        );
+        return [
+          JSON.stringify(loan),
+          name("equipment", loan.equipmentId),
+          group?.name,
+          group?.representative,
+          application?.title,
+          labels[loan.status],
+        ]
+          .join(" ")
+          .toLowerCase()
+          .includes(query);
+      });
+    } else {
+      rows = D.search(rows, filterText);
+    }
+    if (p === "lostItems" && filterOverdue)
+      rows = rows.filter((item) => D.lostItemOverdue(item, today()));
+    if (p === "loans" && filterEquipment)
+      rows = rows.filter((r) => r.equipmentId === filterEquipment);
+    if (p === "suppliers" && filterSupplierCategory)
+      rows = rows.filter((r) => r.category === filterSupplierCategory);
     if (filterStatus) rows = rows.filter((r) => r.status === filterStatus);
     rows =
       p === "tasks" && sortKey === "id"
         ? D.taskOrder(rows)
         : D.sort(rows, sortKey);
-    const cols = columns(p),
+    const allColumns = columns(p),
+      cols = visibleColumns(p, allColumns),
       statuses = [...new Set(state[p].map((r) => r.status).filter(Boolean))];
     let summary = "";
     if (p === "loans")
       summary = `<div class="stats">${state.equipment.map((e) => stat(esc(e.name), D.available(state, e.id) + "<small> / " + e.stock + "</small>", "貸出可能 / 台帳数")).join("")}</div>`;
     if (p === "reservations")
       summary = `<div class="stats">${state.venues.map((v) => stat(esc(v.name), v.capacity + "<small> 名</small>", "予約 " + D.venueUsage(state, v.id) + " 件")).join("")}</div>`;
+    if (p === "lostItems") {
+      const overdueItems = state.lostItems.filter((item) =>
+        D.lostItemOverdue(item, today()),
+      );
+      const overdueSummary = overdueItems.length
+        ? `<p><span class="badge rejected">期限超過 ${overdueItems.length} 件</span> 保管期限を過ぎた落とし物があります。</p><div class="notice-row">${overdueItems
+            .map(
+              (item) =>
+                `<div><b>${esc(item.title)}</b><small>期限：${esc(item.storageDeadline)} / ${esc(item.location)}</small></div>`,
+            )
+            .join("")}</div>`
+        : '<p class="subtitle">保管期限を過ぎた落とし物はありません。</p>';
+      const overdueFilterButton =
+        overdueItems.length || filterOverdue
+          ? `<button class="secondary small" id="filter-overdue">${filterOverdue ? "すべての落とし物を表示" : "期限超過のみ表示"}</button>`
+          : "";
+      summary = panel(
+        "保管期限の確認",
+        overdueSummary + overdueFilterButton,
+      );
+    }
+    const cleaning =
+      p === "reservations"
+        ? panel(
+            "閉館後清掃",
+            `<div class="table-scroll"><table><thead><tr><th>会場</th><th>清掃担当者</th><th>清掃完了</th><th>操作</th></tr></thead><tbody>${state.venues
+              .map(
+                (v) =>
+                  `<tr><td>${esc(v.name)}</td><td><input type="text" data-cleaning-assignee="${esc(v.id)}" aria-label="${esc(v.name)}の清掃担当者" value="${esc(v.cleaningAssignee || "")}"></td><td><label><input type="checkbox" data-cleaning-completed="${esc(v.id)}" aria-label="${esc(v.name)}の清掃完了" ${v.cleaningCompleted ? "checked" : ""}> 完了</label></td><td><button class="small" data-save-cleaning="${esc(v.id)}">保存</button></td></tr>`,
+              )
+              .join("")}</tbody></table></div>`,
+          )
+        : "";
     if (p === "expenses")
       summary = `<div class="stats">${stat("登録経費合計", money(D.expenses(state)), "全団体の経費")}${stat("総予算", money(state.groups.reduce((n, g) => n + Number(g.budget), 0)), "団体ごとの予算を合算")}</div>`;
     if (p === "contacts")
@@ -465,11 +687,17 @@
     return (
       head(
         pages[p][1],
-        `${state[p].length}件の登録データ。検索・編集して準備を進めましょう。`,
+        p === "loans"
+          ? "備品を選んで、返却済みを含む利用団体・代表者と利用目的を確認できます。"
+          : p === "orders"
+            ? "発注品の受領状況、受領日時、受領担当者を記録できます。"
+            : `${state[p].length}件の登録データ。検索・編集して準備を進めましょう。`,
         `<button id="add-row">＋ 新規登録</button>`,
       ) +
       summary +
-      `<div class="toolbar"><div class="filters"><input id="search" type="search" aria-label="一覧を検索" placeholder="キーワードで検索" value="${esc(filterText)}">${statuses.length ? `<select id="status-filter" aria-label="状態で絞り込み"><option value="">すべての状態</option>${statuses.map((s) => `<option value="${s}" ${filterStatus === s ? "selected" : ""}>${labels[s] || s}</option>`).join("")}</select>` : ""}<select id="sort" aria-label="並び順">${cols
+      cleaning +
+      columnPicker(allColumns, cols) +
+      `<div class="toolbar"><div class="filters"><input id="search" type="search" aria-label="一覧を検索" placeholder="キーワードで検索" value="${esc(filterText)}">${p === "loans" ? `<select id="equipment-filter" aria-label="備品で絞り込み"><option value="">すべての備品</option>${state.equipment.map((e) => `<option value="${esc(e.id)}" ${filterEquipment === e.id ? "selected" : ""}>${esc(e.name)}</option>`).join("")}</select>` : ""}${p === "suppliers" ? `<select id="supplier-category-filter" aria-label="業者区分で絞り込み"><option value="">すべての業者区分</option>${options("supplierCategory").map(([v, t]) => `<option value="${esc(v)}" ${filterSupplierCategory === v ? "selected" : ""}>${esc(t)}</option>`).join("")}</select>` : ""}${statuses.length ? `<select id="status-filter" aria-label="状態で絞り込み"><option value="">すべての状態</option>${statuses.map((s) => `<option value="${s}" ${filterStatus === s ? "selected" : ""}>${labels[s] || s}</option>`).join("")}</select>` : ""}<select id="sort" aria-label="並び順">${allColumns
         .filter((c) => !c[0].startsWith("_"))
         .map(
           (c) =>
@@ -478,7 +706,7 @@
         .join(
           "",
         )}</select><span class="subtitle">${rows.length} 件表示</span></div>${exportButton}</div>` +
-      `<div class="panel"><div class="table-scroll"><table><thead><tr>${cols.map((c) => `<th>${c[1]}</th>`).join("")}<th>操作</th></tr></thead><tbody>${rows.length ? rows.map((r) => `<tr>${cols.map((c) => `<td class="${["title", "body", "name"].includes(c[0]) ? "description" : ""}">${cell(r, c[0])}</td>`).join("")}<td><div class="actions"><button class="secondary small" data-edit="${esc(r.id)}">編集</button>${p === "applications" ? `<button class="small" data-copy="${esc(r.id)}">複製</button><button class="small" data-approve="${esc(r.id)}">承認</button><button class="danger small" data-cancel="${esc(r.id)}">取消</button>` : ""}${p === "loans" ? `<button class="small" data-return="${esc(r.id)}">返却</button>` : ""}${p === "tasks" ? `<button class="small" data-done="${esc(r.id)}">完了</button>` : ""}<button class="danger small" data-delete="${esc(r.id)}">削除</button></div></td></tr>`).join("") : `<tr><td colspan="${cols.length + 1}" class="empty">該当するデータはありません。</td></tr>`}</tbody></table></div></div>`
+      `<div class="panel"><div class="table-scroll"><table><thead><tr>${cols.map((c) => `<th>${c[1]}</th>`).join("")}<th>操作</th></tr></thead><tbody>${rows.length ? rows.map((r) => `<tr>${cols.map((c) => `<td class="${["title", "body", "name"].includes(c[0]) ? "description" : ""}">${cell(r, c[0])}</td>`).join("")}<td><div class="actions"><button class="secondary small" data-edit="${esc(r.id)}">編集</button>${p === "applications" ? `<button class="small" data-approve="${esc(r.id)}">承認</button><button class="danger small" data-cancel="${esc(r.id)}">取消</button>` : ""}${p === "loans" && r.status !== "returned" ? `<button class="small" data-return="${esc(r.id)}">返却</button>` : ""}${p === "tasks" ? `<button class="small" data-done="${esc(r.id)}">完了</button>` : ""}<button class="danger small" data-delete="${esc(r.id)}">削除</button></div></td></tr>`).join("") : `<tr><td colspan="${cols.length + 1}" class="empty">該当するデータはありません。</td></tr>`}</tbody></table></div></div>`
     );
   }
   function renderReception() {
@@ -546,6 +774,9 @@
     $("#breadcrumb").textContent = "WORKSPACE / " + pages[p][2];
     $("#content").innerHTML =
       (storageWarning ? `<div class="help">${esc(storageWarning)}</div>` : "") +
+      (columnPreferenceWarning
+        ? `<div class="help">${esc(columnPreferenceWarning)}</div>`
+        : "") +
       (p === "dashboard"
         ? renderDashboard()
         : p === "reception"
@@ -556,6 +787,7 @@
               ? renderSettings()
               : renderList(p));
     bind(p);
+    if (actionInProgress) lockButtons();
   }
   function options(type) {
     if (type === "group" || type === "audience") {
@@ -582,9 +814,11 @@
       ],
       reservationStatus: ["approved", "cancelled"],
       loanStatus: ["reserved", "active", "returned"],
-      expenseStatus: ["submitted", "reviewed", "approved", "rejected"],
+      orderStatus: ["ordered", "received", "notArrived", "damaged"],
+      supplierCategory: ["発注先", "印刷会社", "レンタル業者", "その他"],
+      expenseStatus: ["submitted", "approved", "rejected"],
       taskStatus: ["todo", "active", "done"],
-      groupStatus: ["active", "inactive"],
+      lostItemStatus: ["stored", "claimed", "disposed"],
       category: ["備品", "消耗品", "外注", "広報", "その他"],
       troubleStatus: ["pending", "active", "waiting", "completed"],
     };
@@ -605,7 +839,18 @@
         let input;
         if (type === "textarea")
           input = `<textarea name="${k}">${esc(value)}</textarea>`;
-        else if (["text", "number", "date", "time"].includes(type))
+        else if (
+          [
+            "text",
+            "number",
+            "date",
+            "time",
+            "datetime-local",
+            "tel",
+            "email",
+            "url",
+          ].includes(type)
+        )
           input = `<input name="${k}" type="${type}" ${type === "number" ? 'step="any"' : ""} value="${esc(value)}" ${["title", "name"].includes(k) ? "required" : ""}>`;
         else
           input = `<select name="${k}">${options(type)
@@ -635,9 +880,13 @@
               "venueId",
               "equipmentId",
               "date",
+              "orderDate",
               "due",
               "start",
               "end",
+              "foundDate",
+              "location",
+              "storageDeadline",
             ].includes(f[0]),
           )
           .map((f) => f[0]),
@@ -645,10 +894,12 @@
     )
       return "必須項目を入力してください";
     if (p === "expenses") return D.validateExpense(r);
-    if (p === "troubles") {
-      const err = D.validateTrouble(r);
-      if (err) return err;
-    }
+    if (
+      p === "orders" &&
+      r.status === "received" &&
+      (!r.receivedAt || !String(r.receivedBy || "").trim())
+    )
+      return "受領済の場合は受領日時と受領担当者名を入力してください";
     if (p === "groups" && D.duplicateGroup(state, r.name, r.id))
       return "同じ名前の団体が存在します";
     if (["applications", "reservations", "shifts"].includes(p)) {
@@ -708,7 +959,8 @@
       };
     }
     if (fields[p]) {
-      $("#add-row").onclick = () => openEditor(p);
+      $("#add-row").onclick = (e) =>
+        runAction(e.currentTarget, () => openEditor(p), 0);
       $("#search").oninput = (e) => {
         const pos = e.target.selectionStart;
         filterText = e.target.value;
@@ -721,29 +973,94 @@
           filterStatus = e.target.value;
           render();
         };
+      if ($("#equipment-filter"))
+        $("#equipment-filter").onchange = (e) => {
+          filterEquipment = e.target.value;
+          render();
+        };
+      if ($("#supplier-category-filter"))
+        $("#supplier-category-filter").onchange = (e) => {
+          filterSupplierCategory = e.target.value;
+          render();
+        };
+      document.querySelectorAll("[data-column-visibility]").forEach((input) => {
+        input.onchange = (e) => {
+          const picker = $("#column-picker");
+          const wasOpen = picker.open;
+          const selectedKeys = [
+            ...document.querySelectorAll(
+              "[data-column-visibility]:checked",
+            ),
+          ].map((checkbox) => checkbox.dataset.columnVisibility);
+          if (!selectedKeys.length) {
+            e.currentTarget.checked = true;
+            toast("少なくとも1つの表示列を選択してください");
+            return;
+          }
+          if (!setVisibleColumns(p, selectedKeys)) {
+            e.currentTarget.checked = !e.currentTarget.checked;
+            return;
+          }
+          render();
+          $("#column-picker").open = wasOpen;
+        };
+      });
+      if ($("#filter-overdue"))
+        $("#filter-overdue").onclick = (e) =>
+          runAction(e.currentTarget, () => {
+            filterOverdue = !filterOverdue;
+            render();
+          }, 0);
       $("#sort").onchange = (e) => {
         sortKey = e.target.value;
         render();
       };
-      $("#export-csv").onclick = () => {
-        const csvColumns = columns(p);
-        const labels = Object.fromEntries(csvColumns.map((column) => [column[0], column[1]]));
-        const keys = csvColumns.map((column) => column[0]);
-        download(p + ".csv", D.csv(state[p], keys, labels), "text/csv");
-      };
+      $("#export-csv").onclick = (e) =>
+        runAction(e.currentTarget, () =>
+          download(
+            p + ".csv",
+            D.csv(
+              state[p],
+              fields[p].map((f) => f[0]),
+            ),
+            "text/csv",
+          ),
+        );
       document
         .querySelectorAll("[data-edit]")
-        .forEach((b) => (b.onclick = () => openEditor(p, b.dataset.edit)));
+        .forEach(
+          (b) =>
+            (b.onclick = (e) =>
+              runAction(
+                e.currentTarget,
+                () => openEditor(p, b.dataset.edit),
+                0,
+              )),
+        );
       document.querySelectorAll("[data-delete]").forEach(
         (b) =>
-          (b.onclick = () => {
-            if (!confirm("このデータを削除しますか？")) return;
-            if (p === "groups") D.deleteGroup(state, b.dataset.delete);
-            else state[p] = state[p].filter((r) => r.id !== b.dataset.delete);
-            logAudit("削除", pages[p][1], p, b.dataset.delete);
-            save(pages[p][1] + "を削除しました");
-            render();
-          }),
+          (b.onclick = (e) =>
+            runAction(e.currentTarget, () => {
+              if (p === "groups") {
+                const references = D.groupReferences(state, b.dataset.delete);
+                if (references.length) {
+                  toast(
+                    `関連記録があるため削除できません（${references.join("、")}）。記録を確認してください。`,
+                  );
+                  return;
+                }
+              }
+              if (!confirm("このデータを削除しますか？")) return;
+              if (p === "groups") {
+                if (!D.deleteGroup(state, b.dataset.delete)) {
+                  toast("関連記録があるため削除できません。");
+                  return;
+                }
+              } else
+                state[p] = state[p].filter((r) => r.id !== b.dataset.delete);
+              save(pages[p][1] + "を削除しました");
+              render();
+            })),
       );
       document.querySelectorAll("[data-copy]").forEach(
         (b) => {
@@ -762,52 +1079,82 @@
       );
       document.querySelectorAll("[data-approve]").forEach(
         (b) =>
-          (b.onclick = () => {
-            if (!D.canApprove(state.role)) {
-              toast("実行委員の操作です");
-              return;
-            }
-            const a = state.applications.find(
-              (x) => x.id === b.dataset.approve,
-            );
-            const err = D.validateTime(a);
-            if (err) {
-              toast(err);
-              return;
-            }
-            if (D.venueConflict(state, a)) {
-              toast("会場予約が重複しています");
-              return;
-            }
-            D.approve(state, b.dataset.approve);
-            save("出店を承認し、会場を予約しました");
-            render();
-          }),
+          (b.onclick = (e) =>
+            runAction(e.currentTarget, () => {
+              if (!D.canApprove(state.role)) {
+                toast("実行委員の操作です");
+                return;
+              }
+              const a = state.applications.find(
+                (x) => x.id === b.dataset.approve,
+              );
+              const err = D.validateTime(a);
+              if (err) {
+                toast(err);
+                return;
+              }
+              if (D.venueConflict(state, a)) {
+                toast("会場予約が重複しています");
+                return;
+              }
+              D.approve(state, b.dataset.approve);
+              save("出店を承認し、会場を予約しました");
+              render();
+            })),
       );
       document.querySelectorAll("[data-cancel]").forEach(
         (b) =>
-          (b.onclick = () => {
-            if (!confirm("出店を取り消しますか？")) return;
-            const invalidated = D.cancelApplication(state, b.dataset.cancel);
-            save("出店を取り消しました" + (invalidated ? "（整理券" + invalidated + "件を無効化）" : ""));
-            render();
-          }),
+          (b.onclick = (e) =>
+            runAction(e.currentTarget, () => {
+              if (!confirm("出店を取り消しますか？")) return;
+              D.cancelApplication(state, b.dataset.cancel);
+              save("出店を取り消しました");
+              render();
+            })),
       );
       document.querySelectorAll("[data-return]").forEach(
         (b) =>
-          (b.onclick = () => {
-            D.returnLoan(state, b.dataset.return);
-            save("返却を記録しました");
-            render();
-          }),
+          (b.onclick = (e) =>
+            runAction(e.currentTarget, () => {
+              D.returnLoan(state, b.dataset.return);
+              save("返却を記録しました");
+              render();
+            })),
       );
       document.querySelectorAll("[data-done]").forEach(
         (b) =>
-          (b.onclick = () => {
-            state.tasks.find((t) => t.id === b.dataset.done).status = "done";
-            save("タスクを完了しました");
-            render();
-          }),
+          (b.onclick = (e) =>
+            runAction(e.currentTarget, () => {
+              state.tasks.find((t) => t.id === b.dataset.done).status = "done";
+              save("タスクを完了しました");
+              render();
+            })),
+      );
+      document.querySelectorAll("[data-save-cleaning]").forEach(
+        (b) =>
+          (b.onclick = (e) =>
+            runAction(e.currentTarget, () => {
+              const venue = state.venues.find(
+                (v) => v.id === b.dataset.saveCleaning,
+              );
+              if (!venue) {
+                toast("会場が見つかりません。画面を再読み込みしてください。");
+                return;
+              }
+              const nextState = structuredClone(state);
+              const nextVenue = nextState.venues.find(
+                (v) => v.id === b.dataset.saveCleaning,
+              );
+              nextVenue.cleaningAssignee = $(
+                `[data-cleaning-assignee="${venue.id}"]`,
+              ).value.trim();
+              nextVenue.cleaningCompleted = $(
+                `[data-cleaning-completed="${venue.id}"]`,
+              ).checked;
+              if (!save("会場清掃の担当と完了状況を保存しました", nextState))
+                return;
+              render();
+            })),
       );
     }
     if (p === "settings") {
@@ -897,57 +1244,43 @@
   });
   $("#edit-form").onsubmit = (e) => {
     e.preventDefault();
-    const { p, id } = editing;
-    const r = {
-      ...(editing.row || {}),
-      ...Object.fromEntries(new FormData(e.target)),
-    };
-    fields[p]
-      .filter((f) => f[2] === "number")
-      .forEach((f) => (r[f[0]] = Number(r[f[0]])));
-    r.id = id || D.nextId(state[p], prefixes[p]);
-    const error = validate(p, r);
-    if (error) {
-      toast(error);
-      return;
-    }
-    if (p === "expenses") r.amount = D.roundedAmount(r.amount);
-    if ((p === "applications" || p === "reservations") && id && editing.original) {
-      const previous = Number(editing.original.attendees);
-      const next = Number(r.attendees);
-      if (previous !== next) {
-        const reason = String(r.attendeeChangeReason ?? "").trim();
-        const editor = String(r.attendeeChangeEditor ?? "").trim();
-        if (!reason) {
-          toast("来場人数を変更した場合は修正理由を入力してください");
+    return runAction(
+      e.submitter || $('#edit-form button[type="submit"]'),
+      () => {
+        const { p, id } = editing;
+        const r = {
+          ...(editing.row || {}),
+          ...Object.fromEntries(new FormData(e.target)),
+        };
+        fields[p]
+          .filter((f) => f[2] === "number")
+          .forEach((f) => (r[f[0]] = Number(r[f[0]])));
+        r.id = id || D.nextId(state[p], prefixes[p]);
+        const error = validate(p, r);
+        if (error) {
+          toast(error);
           return;
         }
-        if (!editor) {
-          toast("修正者を入力してください");
-          return;
-        }
-        state.attendeeChanges.push({ id: D.nextId(state.attendeeChanges, "AC"), entity: p, entityId: id, before: previous, after: next, reason, editor, at: new Date().toISOString() });
-      }
-      delete r.attendeeChangeReason;
-      delete r.attendeeChangeEditor;
-    }
-    if (id) state[p][state[p].findIndex((x) => x.id === id)] = r;
-    else state[p].push(r);
-    if (p === "applications" && r.status === "cancelled") {
-      const invalidated = D.invalidateTickets(state, r.id);
-      if (invalidated > 0) toast(invalidated + "件の整理券を無効化しました");
-    }
-    save(pages[p][1] + "を保存しました");
-    $("#editor").close();
-    render();
+        if (p === "expenses") r.amount = D.roundedAmount(r.amount);
+        const nextState = structuredClone(state);
+        if (id)
+          nextState[p][nextState[p].findIndex((x) => x.id === id)] = r;
+        else nextState[p].push(r);
+        if (!save(pages[p][1] + "を保存しました", nextState)) return;
+        $("#editor").close();
+        render();
+      },
+    );
   };
   function closeEditor() {
     $("#editor").close();
     editing = null;
     render();
   }
-  $("#close-dialog").onclick = closeEditor;
-  $("#cancel-dialog").onclick = closeEditor;
+  $("#close-dialog").onclick = (e) =>
+    runAction(e.currentTarget, closeEditor, 0);
+  $("#cancel-dialog").onclick = (e) =>
+    runAction(e.currentTarget, closeEditor, 0);
   $("#editor").addEventListener("cancel", () => {
     editing = null;
     setTimeout(render, 0);
@@ -960,6 +1293,9 @@
   window.addEventListener("hashchange", () => {
     filterText = "";
     filterStatus = "";
+    filterEquipment = "";
+    filterSupplierCategory = "";
+    filterOverdue = false;
     sortKey = "id";
     render();
   });
