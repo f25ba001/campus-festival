@@ -19,6 +19,7 @@
     storageWarning = "",
     filterText = "",
     filterStatus = "",
+    filterEquipment = "",
     sortKey = "id",
     editing = null,
     toastTimer;
@@ -262,7 +263,8 @@
         return [
           ["id", "ID"],
           ["equipmentId", "備品"],
-          ["groupId", "団体"],
+          ["_borrower", "利用団体・代表者"],
+          ["_purpose", "利用目的"],
           ["quantity", "数量"],
           ["due", "返却期限"],
           ["status", "状態"],
@@ -312,6 +314,18 @@
       return r[k] === "all" ? "全体" : esc(name("groups", r[k]));
     if (k === "venueId") return esc(name("venues", r[k]));
     if (k === "equipmentId") return esc(name("equipment", r[k]));
+    if (k === "_borrower") {
+      const group = state.groups.find((g) => g.id === r.groupId);
+      return group
+        ? `${esc(group.name)} / ${esc(group.representative || "代表者未登録")}`
+        : "未設定";
+    }
+    if (k === "_purpose") {
+      const application = state.applications.find(
+        (a) => a.id === r.applicationId,
+      );
+      return application ? esc(application.title) : "用途未登録";
+    }
     if (k === "status") return badge(r[k]);
     if (k === "amount" || k === "budget") return money(r[k]);
     if (k === "_remaining") return money(D.remaining(state, r.id));
@@ -325,7 +339,30 @@
   }
   function renderList(p) {
     let rows = p === "notices" ? D.notices(state, state.groupId) : state[p];
-    rows = D.search(rows, filterText);
+    if (p === "loans") {
+      const query = filterText.toLowerCase();
+      rows = rows.filter((loan) => {
+        const group = state.groups.find((g) => g.id === loan.groupId);
+        const application = state.applications.find(
+          (a) => a.id === loan.applicationId,
+        );
+        return [
+          JSON.stringify(loan),
+          name("equipment", loan.equipmentId),
+          group?.name,
+          group?.representative,
+          application?.title,
+          labels[loan.status],
+        ]
+          .join(" ")
+          .toLowerCase()
+          .includes(query);
+      });
+    } else {
+      rows = D.search(rows, filterText);
+    }
+    if (p === "loans" && filterEquipment)
+      rows = rows.filter((r) => r.equipmentId === filterEquipment);
     if (filterStatus) rows = rows.filter((r) => r.status === filterStatus);
     rows =
       p === "tasks" && sortKey === "id"
@@ -345,11 +382,13 @@
     return (
       head(
         pages[p][1],
-        `${state[p].length}件の登録データ。検索・編集して準備を進めましょう。`,
+        p === "loans"
+          ? "備品を選んで、返却済みを含む利用団体・代表者と利用目的を確認できます。"
+          : `${state[p].length}件の登録データ。検索・編集して準備を進めましょう。`,
         `<button id="add-row">＋ 新規登録</button>`,
       ) +
       summary +
-      `<div class="toolbar"><div class="filters"><input id="search" type="search" aria-label="一覧を検索" placeholder="キーワードで検索" value="${esc(filterText)}">${statuses.length ? `<select id="status-filter" aria-label="状態で絞り込み"><option value="">すべての状態</option>${statuses.map((s) => `<option value="${s}" ${filterStatus === s ? "selected" : ""}>${labels[s] || s}</option>`).join("")}</select>` : ""}<select id="sort" aria-label="並び順">${cols
+      `<div class="toolbar"><div class="filters"><input id="search" type="search" aria-label="一覧を検索" placeholder="キーワードで検索" value="${esc(filterText)}">${p === "loans" ? `<select id="equipment-filter" aria-label="備品で絞り込み"><option value="">すべての備品</option>${state.equipment.map((e) => `<option value="${esc(e.id)}" ${filterEquipment === e.id ? "selected" : ""}>${esc(e.name)}</option>`).join("")}</select>` : ""}${statuses.length ? `<select id="status-filter" aria-label="状態で絞り込み"><option value="">すべての状態</option>${statuses.map((s) => `<option value="${s}" ${filterStatus === s ? "selected" : ""}>${labels[s] || s}</option>`).join("")}</select>` : ""}<select id="sort" aria-label="並び順">${cols
         .filter((c) => !c[0].startsWith("_"))
         .map(
           (c) =>
@@ -358,7 +397,7 @@
         .join(
           "",
         )}</select><span class="subtitle">${rows.length} 件表示</span></div>${exportButton}</div>` +
-      `<div class="panel"><div class="table-scroll"><table><thead><tr>${cols.map((c) => `<th>${c[1]}</th>`).join("")}<th>操作</th></tr></thead><tbody>${rows.length ? rows.map((r) => `<tr>${cols.map((c) => `<td class="${["title", "body", "name"].includes(c[0]) ? "description" : ""}">${cell(r, c[0])}</td>`).join("")}<td><div class="actions"><button class="secondary small" data-edit="${esc(r.id)}">編集</button>${p === "applications" ? `<button class="small" data-approve="${esc(r.id)}">承認</button><button class="danger small" data-cancel="${esc(r.id)}">取消</button>` : ""}${p === "loans" ? `<button class="small" data-return="${esc(r.id)}">返却</button>` : ""}${p === "tasks" ? `<button class="small" data-done="${esc(r.id)}">完了</button>` : ""}<button class="danger small" data-delete="${esc(r.id)}">削除</button></div></td></tr>`).join("") : `<tr><td colspan="${cols.length + 1}" class="empty">該当するデータはありません。</td></tr>`}</tbody></table></div></div>`
+      `<div class="panel"><div class="table-scroll"><table><thead><tr>${cols.map((c) => `<th>${c[1]}</th>`).join("")}<th>操作</th></tr></thead><tbody>${rows.length ? rows.map((r) => `<tr>${cols.map((c) => `<td class="${["title", "body", "name"].includes(c[0]) ? "description" : ""}">${cell(r, c[0])}</td>`).join("")}<td><div class="actions"><button class="secondary small" data-edit="${esc(r.id)}">編集</button>${p === "applications" ? `<button class="small" data-approve="${esc(r.id)}">承認</button><button class="danger small" data-cancel="${esc(r.id)}">取消</button>` : ""}${p === "loans" && r.status !== "returned" ? `<button class="small" data-return="${esc(r.id)}">返却</button>` : ""}${p === "tasks" ? `<button class="small" data-done="${esc(r.id)}">完了</button>` : ""}<button class="danger small" data-delete="${esc(r.id)}">削除</button></div></td></tr>`).join("") : `<tr><td colspan="${cols.length + 1}" class="empty">該当するデータはありません。</td></tr>`}</tbody></table></div></div>`
     );
   }
   function renderSettings() {
@@ -514,6 +553,11 @@
       if ($("#status-filter"))
         $("#status-filter").onchange = (e) => {
           filterStatus = e.target.value;
+          render();
+        };
+      if ($("#equipment-filter"))
+        $("#equipment-filter").onchange = (e) => {
+          filterEquipment = e.target.value;
           render();
         };
       $("#sort").onchange = (e) => {
@@ -676,6 +720,7 @@
   window.addEventListener("hashchange", () => {
     filterText = "";
     filterStatus = "";
+    filterEquipment = "";
     sortKey = "id";
     render();
   });
