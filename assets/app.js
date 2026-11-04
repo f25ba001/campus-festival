@@ -418,6 +418,18 @@
       summary = `<div class="stats">${state.equipment.map((e) => stat(esc(e.name), D.available(state, e.id) + "<small> / " + e.stock + "</small>", "貸出可能 / 台帳数")).join("")}</div>`;
     if (p === "reservations")
       summary = `<div class="stats">${state.venues.map((v) => stat(esc(v.name), v.capacity + "<small> 名</small>", "予約 " + D.venueUsage(state, v.id) + " 件")).join("")}</div>`;
+    const cleaning =
+      p === "reservations"
+        ? panel(
+            "閉館後清掃",
+            `<div class="table-scroll"><table><thead><tr><th>会場</th><th>清掃担当者</th><th>清掃完了</th><th>操作</th></tr></thead><tbody>${state.venues
+              .map(
+                (v) =>
+                  `<tr><td>${esc(v.name)}</td><td><input type="text" data-cleaning-assignee="${esc(v.id)}" aria-label="${esc(v.name)}の清掃担当者" value="${esc(v.cleaningAssignee || "")}"></td><td><label><input type="checkbox" data-cleaning-completed="${esc(v.id)}" aria-label="${esc(v.name)}の清掃完了" ${v.cleaningCompleted ? "checked" : ""}> 完了</label></td><td><button class="small" data-save-cleaning="${esc(v.id)}">保存</button></td></tr>`,
+              )
+              .join("")}</tbody></table></div>`,
+          )
+        : "";
     if (p === "expenses")
       summary = `<div class="stats">${stat("登録経費合計", money(D.expenses(state)), "全団体の経費")}${stat("総予算", money(state.groups.reduce((n, g) => n + Number(g.budget), 0)), "団体ごとの予算を合算")}</div>`;
     const exportButton =
@@ -431,6 +443,7 @@
         `<button id="add-row">＋ 新規登録</button>`,
       ) +
       summary +
+      cleaning +
       `<div class="toolbar"><div class="filters"><input id="search" type="search" aria-label="一覧を検索" placeholder="キーワードで検索" value="${esc(filterText)}">${p === "loans" ? `<select id="equipment-filter" aria-label="備品で絞り込み"><option value="">すべての備品</option>${state.equipment.map((e) => `<option value="${esc(e.id)}" ${filterEquipment === e.id ? "selected" : ""}>${esc(e.name)}</option>`).join("")}</select>` : ""}${statuses.length ? `<select id="status-filter" aria-label="状態で絞り込み"><option value="">すべての状態</option>${statuses.map((s) => `<option value="${s}" ${filterStatus === s ? "selected" : ""}>${labels[s] || s}</option>`).join("")}</select>` : ""}<select id="sort" aria-label="並び順">${cols
         .filter((c) => !c[0].startsWith("_"))
         .map(
@@ -706,6 +719,32 @@
             runAction(e.currentTarget, () => {
               state.tasks.find((t) => t.id === b.dataset.done).status = "done";
               save("タスクを完了しました");
+              render();
+            })),
+      );
+      document.querySelectorAll("[data-save-cleaning]").forEach(
+        (b) =>
+          (b.onclick = (e) =>
+            runAction(e.currentTarget, () => {
+              const venue = state.venues.find(
+                (v) => v.id === b.dataset.saveCleaning,
+              );
+              if (!venue) {
+                toast("会場が見つかりません。画面を再読み込みしてください。");
+                return;
+              }
+              const nextState = structuredClone(state);
+              const nextVenue = nextState.venues.find(
+                (v) => v.id === b.dataset.saveCleaning,
+              );
+              nextVenue.cleaningAssignee = $(
+                `[data-cleaning-assignee="${venue.id}"]`,
+              ).value.trim();
+              nextVenue.cleaningCompleted = $(
+                `[data-cleaning-completed="${venue.id}"]`,
+              ).checked;
+              if (!save("会場清掃の担当と完了状況を保存しました", nextState))
+                return;
               render();
             })),
       );

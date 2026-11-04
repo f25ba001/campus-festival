@@ -182,6 +182,11 @@ textarea {
   color: var(--ink);
   max-width: 100%;
 }
+input[type="checkbox"] {
+  margin: 0 6px 0 0;
+  padding: 0;
+  vertical-align: middle;
+}
 textarea {
   resize: vertical;
   min-height: 85px;

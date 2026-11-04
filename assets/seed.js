@@ -49,10 +49,34 @@
       },
     ],
     venues: [
-      { id: "V01", name: "メインホール", capacity: 120 },
-      { id: "V02", name: "中庭テント", capacity: 40 },
-      { id: "V03", name: "実習室 A", capacity: 30 },
-      { id: "V04", name: "ギャラリー", capacity: 50 },
+      {
+        id: "V01",
+        name: "メインホール",
+        capacity: 120,
+        cleaningAssignee: "",
+        cleaningCompleted: false,
+      },
+      {
+        id: "V02",
+        name: "中庭テント",
+        capacity: 40,
+        cleaningAssignee: "",
+        cleaningCompleted: false,
+      },
+      {
+        id: "V03",
+        name: "実習室 A",
+        capacity: 30,
+        cleaningAssignee: "",
+        cleaningCompleted: false,
+      },
+      {
+        id: "V04",
+        name: "ギャラリー",
+        capacity: 50,
+        cleaningAssignee: "",
+        cleaningCompleted: false,
+      },
     ],
     applications: [
       {
