@@ -155,15 +155,43 @@
     clearTimeout(toastTimer);
     toastTimer = setTimeout(() => ($("#toast").style.display = "none"), 4000);
   }
+  const DRAFT_BACKUP_KEY = KEY + "-draft";
+  function persistState() {
+    const payload = JSON.stringify(state);
+    const warningLimit = 4 * 1024 * 1024;
+    if (payload.length > warningLimit && !confirm("保存領域がほぼいっぱいです。現在の変更を一時保存して続行しますか？")) {
+      toast("保存を中断しました。バックアップを取ってから再実行してください。");
+      return false;
+    }
+    try {
+      localStorage.setItem(KEY, payload);
+      sessionStorage.removeItem(DRAFT_BACKUP_KEY);
+      return true;
+    } catch (e) {
+      try {
+        sessionStorage.setItem(DRAFT_BACKUP_KEY, payload);
+      } catch (storageError) {
+        /* ignore */
+      }
+      alert("保存容量に達しました。現在の変更は一時保存されました。バックアップファイルを保存してから再度試してください。");
+      return false;
+    }
+  }
+  function resetToSeedState() {
+    state = structuredClone(FestivalSeed);
+    storageWarning = "";
+    filterText = "";
+    filterStatus = "";
+    sortKey = "id";
+    editing = null;
+    localStorage.removeItem(KEY);
+    sessionStorage.removeItem(DRAFT_BACKUP_KEY);
+    localStorage.setItem(KEY, JSON.stringify(state));
+  }
   function save(message) {
     state.activity.unshift({ at: new Date().toISOString(), message });
     state.activity = state.activity.slice(0, 100);
-    try {
-      localStorage.setItem(KEY, JSON.stringify(state));
-    } catch (e) {
-      toast("保存できませんでした。データ管理からバックアップしてください。");
-      return;
-    }
+    if (!persistState()) return;
     if (message) toast(message);
   }
   function download(filename, text, type = "application/json") {
@@ -365,7 +393,7 @@
   function renderSettings() {
     return (
       head("データを、手元に。", "保存・復元と、操作する団体を管理します。") +
-      `<div class="help">これはブラウザ内で動く演習用システムです。ログイン認証や共同データ保存はありません。役割・団体の切り替えは業務操作の体験用です。同じデータで確認するときはJSONファイルを共有してください。端末やブラウザが変わると保存先も変わります。</div><div class="settings-grid">${panel("バックアップ", '<p>現在の業務データをJSONファイルとして保存します。</p><button id="backup">JSONを書き出す</button>')}${panel("データを復元", '<p>JSONファイルを読み込み、現在のデータを置き換えます。</p><input id="restore-file" aria-label="復元するJSON" type="file" accept=".json"><button id="restore" class="secondary">読み込む</button>')}${panel("操作する団体", `<p>団体代表として表示する団体を選択します。</p><select id="current-group" aria-label="操作する団体">${state.groups.map((g) => `<option value="${g.id}" ${g.id === state.groupId ? "selected" : ""}>${esc(g.name)}</option>`).join("")}</select>`)}${panel("サンプルデータへ戻す", '<p>編集内容を破棄して、最初の状態に戻します。実行前にバックアップを保存してください。</p><button id="reset" class="danger">初期データへ戻す</button>')}</div>`
+      `<div class="help">これはブラウザ内で動く演習用システムです。ログイン認証や共同データ保存はありません。役割・団体の切り替えは業務操作の体験用です。同じデータで確認するときはJSONファイルを共有してください。端末やブラウザが変わると保存先も変わります。</div><div class="settings-grid">${panel("バックアップ", '<p>現在の業務データをJSONファイルとして保存します。</p><button id="backup">JSONを書き出す</button>')}${panel("データを復元", '<p>JSONファイルを読み込み、現在のデータを置き換えます。</p><input id="restore-file" aria-label="復元するJSON" type="file" accept=".json"><div id="restore-preview" class="help" hidden></div><button id="restore" class="secondary">読み込む</button>')}${panel("操作する団体", `<p>団体代表として表示する団体を選択します。</p><select id="current-group" aria-label="操作する団体">${state.groups.map((g) => `<option value="${g.id}" ${g.id === state.groupId ? "selected" : ""}>${esc(g.name)}</option>`).join("")}</select>`)}${panel("サンプルデータへ戻す", '<p>編集内容を破棄して、最初の状態に戻します。実行前にバックアップを保存してください。</p><button id="reset" class="danger">初期データへ戻す</button>')}</div>`
     );
   }
   function render() {
@@ -609,11 +637,35 @@
       );
     }
     if (p === "settings") {
+      const previewRestore = async () => {
+        const file = $("#restore-file").files[0];
+        const preview = $("#restore-preview");
+        if (!file) {
+          preview.hidden = true;
+          preview.textContent = "";
+          return;
+        }
+        try {
+          const text = await file.text();
+          const data = JSON.parse(text.replace(/^\uFEFF/, ""));
+          if (!D.validateImport(data)) throw Error("形式が不正です");
+          const groups = Array.isArray(data.groups) ? data.groups.length : 0;
+          const applications = Array.isArray(data.applications)
+            ? data.applications.length
+            : 0;
+          preview.hidden = false;
+          preview.innerHTML = `選択中のバックアップ: <strong>${esc(file.name)}</strong><br>団体数 ${groups} 団体 / 申請件数 ${applications} 件`;
+        } catch (e) {
+          preview.hidden = false;
+          preview.textContent = "選択したファイルを読み込めませんでした: " + e.message;
+        }
+      };
       $("#backup").onclick = () =>
         download(
           "festival-backup-" + today() + ".json",
           JSON.stringify(state, null, 2),
         );
+      $("#restore-file").onchange = previewRestore;
       $("#restore").onclick = async () => {
         const file = $("#restore-file").files[0];
         if (!file) {
@@ -624,7 +676,16 @@
           const data = JSON.parse((await file.text()).replace(/^\uFEFF/, ""));
           if (!D.validateImport(data) || !D.validateUniqueIds(data))
             throw Error("形式が不正です");
-          if (!confirm("現在のデータを置き換えますか？")) return;
+          const groups = Array.isArray(data.groups) ? data.groups.length : 0;
+          const applications = Array.isArray(data.applications)
+            ? data.applications.length
+            : 0;
+          if (
+            !confirm(
+              `現在のデータを置き換えますか？\n\n${file.name}\n団体数: ${groups} 団体\n申請件数: ${applications} 件`,
+            )
+          )
+            return;
           state = data;
           save("バックアップを復元しました");
           render();
@@ -634,9 +695,8 @@
       };
       $("#reset").onclick = () => {
         if (!confirm("編集内容を破棄し、初期データへ戻しますか？")) return;
-        state = structuredClone(FestivalSeed);
-        storageWarning = "";
-        save("初期データへ戻しました");
+        resetToSeedState();
+        toast("初期データへ戻しました");
         render();
       };
       $("#current-group").onchange = (e) => {

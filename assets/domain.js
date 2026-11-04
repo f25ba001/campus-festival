@@ -54,8 +54,11 @@
       l.status = "returned";
     },
     validateExpense(r) {
-      if (!Number.isFinite(Number(r.amount)))
+      const amount = Number(r.amount);
+      if (!Number.isFinite(amount))
         return "金額は数値で入力してください";
+      if (!Number.isInteger(amount))
+        return "金額は整数で入力してください。小数は登録できません。";
       return "";
     },
     isHighValueExpense(amount) {
@@ -109,7 +112,13 @@
       return true;
     },
     nextId(rows, prefix) {
-      return prefix + String(rows.length + 1).padStart(2, "0");
+      const max = rows.reduce((n, row) => {
+        const match = String(row.id ?? "").match(new RegExp(`^${prefix}\\d+$`));
+        if (!match) return n;
+        const value = Number(String(row.id).slice(prefix.length));
+        return Number.isFinite(value) ? Math.max(n, value) : n;
+      }, 0);
+      return prefix + String(max + 1).padStart(2, "0");
     },
     csv(rows, keys) {
       return [
@@ -127,7 +136,8 @@
       return row;
     },
     roundedAmount(value) {
-      return Math.trunc(Number(value));
+      const amount = Number(value);
+      return Number.isInteger(amount) ? amount : Math.trunc(amount);
     },
     overdueTasks(s, today) {
       return s.tasks.filter((t) => D.overdue(t, today));
