@@ -58,6 +58,8 @@
     validateExpense(r) {
       if (!Number.isFinite(Number(r.amount)))
         return "金額は数値で入力してください";
+      if (Number(r.amount) === 0)
+        return "金額が0円の経費は申請できません";
       return "";
     },
     validateTime(r) {
